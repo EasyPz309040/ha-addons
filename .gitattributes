@@ -1,0 +1,7 @@
+# Nothing secret should ever be in this repo - it is public.
+# Playbooks, inventory and keys live in the private Home repo / on /share.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
