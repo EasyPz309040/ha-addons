@@ -10,7 +10,7 @@ FROM $BUILD_FROM
 # collections are needed and the build has no network dependency beyond apk.
 RUN apk add --no-cache ansible-core openssh-client git tar
 
-LABEL io.hass.version="0.3.0" \
+LABEL io.hass.version="0.4.0" \
       io.hass.type="addon" \
       io.hass.arch="amd64|aarch64"
 
@@ -18,7 +18,8 @@ LABEL io.hass.version="0.3.0" \
 # container start, so editing a playbook is a commit and a restart rather
 # than an image rebuild.
 COPY run.sh /run.sh
+COPY sync-playbooks.sh /usr/bin/sync-playbooks.sh
 COPY run-ansible-update.sh /usr/bin/run-ansible-update.sh
-RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh
+RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh /usr/bin/sync-playbooks.sh
 
 CMD [ "/run.sh" ]

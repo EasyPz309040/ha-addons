@@ -65,6 +65,7 @@ it found.
 | `update_playbook` | `update.yml` | Which playbook that schedule runs |
 | `backup_schedule` | `0 2 * * *` | Cron for the datastore backup |
 | `backup_enabled` | `true` | Whether to schedule backups at all |
+| `sync_before_run` | `true` | Pull the latest playbooks before every run |
 | `run_on_start` | `false` | Run the update playbook immediately on start |
 
 ## Running on demand
@@ -89,6 +90,13 @@ records the repo commit it ran against.
   can't swallow it.
 
 ## Behaviour worth knowing
+
+**Playbooks are pulled before every run, not just at container start.** Cron
+runs inside an already-running container, so without this a container that
+has been up for weeks would keep executing the commit it cloned at the last
+restart. With `sync_before_run` on (the default), a commit and a push is
+enough — no add-on restart needed. Each log records the commit it ran
+against.
 
 **A failed fetch is not fatal.** If GitHub is unreachable the add-on keeps the
 last good checkout and carries on, rather than leaving you with no playbooks.
