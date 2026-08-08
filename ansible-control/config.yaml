@@ -1,0 +1,31 @@
+name: "Ansible Control Node"
+version: "0.3.0"
+slug: "ansible-control"
+description: "Ansible control node for the home fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
+url: "https://github.com/EasyPz309040/ha-addons/tree/main/ansible-control"
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+init: false
+map:
+  - share:rw
+options:
+  playbook_repo: "git@github.com:EasyPz309040/Home.git"
+  playbook_branch: "main"
+  playbook_subdir: "ANSIBLE"
+  update_schedule: "0 3 * * 0"
+  update_playbook: "update.yml"
+  backup_schedule: "0 2 * * *"
+  backup_enabled: true
+  run_on_start: false
+schema:
+  playbook_repo: str
+  playbook_branch: str
+  playbook_subdir: str
+  update_schedule: "match(^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$)"
+  update_playbook: str
+  backup_schedule: "match(^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$)"
+  backup_enabled: bool
+  run_on_start: bool

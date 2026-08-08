@@ -1,0 +1,8 @@
+# Nothing secret should ever be in this repo - it is public.
+# Playbooks, inventory and keys live in the private Home repo / on /share.
+*.key
+*.pem
+id_*
+!id_*.pub
+inventory.ini
+*.log
