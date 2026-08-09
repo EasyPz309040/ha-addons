@@ -1,12 +1,16 @@
 name: "EasyPz Ansible Control Node"
-version: "0.4.0"
+version: "0.5.0"
 slug: "ansible-control"
-description: "Ansible control node for the homeLab fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
+description: "Ansible control node for the home fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/ansible-control"
 arch:
   - amd64
   - aarch64
 startup: application
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:rocket-launch-outline
+panel_title: Ansible
 boot: auto
 init: false
 map:

@@ -8,9 +8,9 @@ FROM $BUILD_FROM
 # ansible-core, not the "ansible" metapackage. The playbooks in the private
 # repo deliberately use only ansible.builtin modules, so no Galaxy
 # collections are needed and the build has no network dependency beyond apk.
-RUN apk add --no-cache ansible-core openssh-client git tar
+RUN apk add --no-cache ansible-core openssh-client git tar python3
 
-LABEL io.hass.version="0.4.0" \
+LABEL io.hass.version="0.5.0" \
       io.hass.type="addon" \
       io.hass.arch="amd64|aarch64"
 
@@ -19,7 +19,8 @@ LABEL io.hass.version="0.4.0" \
 # than an image rebuild.
 COPY run.sh /run.sh
 COPY sync-playbooks.sh /usr/bin/sync-playbooks.sh
+COPY ui.py /usr/bin/ui.py
 COPY run-ansible-update.sh /usr/bin/run-ansible-update.sh
-RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh /usr/bin/sync-playbooks.sh
+RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh /usr/bin/sync-playbooks.sh /usr/bin/ui.py
 
 CMD [ "/run.sh" ]

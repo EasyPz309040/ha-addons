@@ -13,7 +13,7 @@ https://github.com/EasyPz309040/ha-addons
 
 | Add-on | What it does |
 |---|---|
-| [Ansible Control Node](ansible-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo at container start. |
+| [EasyPz Ansible Control Node](ansible-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo before every run. |
 
 ## Why this repo is public and separate
 

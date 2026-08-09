@@ -1,4 +1,4 @@
-# Ansible Control Node
+# EasyPz Ansible Control Node
 
 Runs Ansible playbooks against a home fleet on a schedule. The playbooks
 themselves are **not** in this add-on — they're cloned from a separate
@@ -53,6 +53,24 @@ Set `playbook_repo` to the SSH URL of the private repo
 (`git@github.com:USER/REPO.git` — not the HTTPS form, which won't use the
 deploy key), then start the add-on and check the log. It lists the playbooks
 it found.
+
+## Using it
+
+The add-on adds an **Ansible** entry to the Home Assistant sidebar (served
+through ingress, so it sits behind HA's own login and exposes no port on the
+LAN).
+
+The panel lists every playbook found in the repo with a **Run** button, shows
+the commit they're currently at, and lists recent runs with their exit status.
+Click a run to read its full log.
+
+Only one run happens at a time — buttons disable while something is in
+progress. Two concurrent apt runs against the same host would fight, and a
+cordon/drain overlapping an update is worse.
+
+`bootstrap.yml` is deliberately **not** offered as a button. Its first run
+against a fresh host is interactive (`--ask-pass`), and it's one-time
+provisioning rather than routine operation.
 
 ## Options
 

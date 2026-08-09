@@ -73,5 +73,8 @@ if bashio::config.true 'run_on_start'; then
         bashio::log.warning "Startup run failed; the cron schedule is still active."
 fi
 
+bashio::log.info "Starting web UI on ingress port 8099."
+INGRESS_PORT=8099 python3 /usr/bin/ui.py &
+
 bashio::log.info "Starting cron."
 exec crond -f -d 8

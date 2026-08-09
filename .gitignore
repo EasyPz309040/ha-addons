@@ -6,3 +6,7 @@ id_*
 !id_*.pub
 inventory.ini
 *.log
+
+# Python bytecode
+__pycache__/
+*.pyc
