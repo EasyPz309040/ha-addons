@@ -68,7 +68,7 @@ Only one run happens at a time — buttons disable while something is in
 progress. Two concurrent apt runs against the same host would fight, and a
 cordon/drain overlapping an update is worse.
 
-`bootstrap.yml` is deliberately **not** offered as a button. Its first run
+`provision-host.yml` is deliberately **not** offered as a button. Its first run
 against a fresh host is interactive (`--ask-pass`), and it's one-time
 provisioning rather than routine operation.
 

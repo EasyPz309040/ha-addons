@@ -25,9 +25,9 @@ LOCK = SHARE / ".run.lock"
 RUNNER = "/usr/bin/run-ansible-update.sh"
 
 # Playbooks that must never be triggered from a web button.
-# bootstrap.yml's first run is interactive (--ask-pass) and it is one-time
-# provisioning, not routine operation.
-EXCLUDED = {"bootstrap.yml"}
+# provision-host.yml's first run is interactive (--ask-pass) and it is
+# one-time provisioning, not routine operation.
+EXCLUDED = {"provision-host.yml"}
 
 DESCRIPTIONS = {
     "update.yml": "OS patching, one host at a time. Reboots only if the OS asks.",
