@@ -72,6 +72,45 @@ cordon/drain overlapping an update is worse.
 against a fresh host is interactive (`--ask-pass`), and it's one-time
 provisioning rather than routine operation.
 
+## Playbooks
+
+What each button does, and when you'd actually click it.
+
+**`update.yml`** — Plain OS patching, one host at a time. Reboots only if
+the OS asks; does not cordon or drain. **When to use:** this is what the
+scheduled weekly run (`update_schedule`) does by default — click it yourself
+between schedules if you want patches sooner. A rebooting host briefly drops
+whatever pods were on it, so prefer `cluster-update.yml` if that matters to
+you.
+
+**`cluster-update.yml`** — Cordon → drain → patch → reboot → wait for
+`Ready` → uncordon. Workers first, control plane last; a failure still
+uncordons. **When to use:** the safe way to patch when you don't want pods
+disrupted without warning. Switch `update_playbook` to this once you've run
+it manually a few times — it's meant to become the default scheduled job.
+
+**`backup-datastore.yml`** — Stops k3s, archives the SQLite datastore and
+TLS material, restarts, fetches the archive to `/share`. **When to use:**
+runs nightly on its own schedule (`backup_schedule`); click it manually right
+before anything risky to the control plane — a `cluster-update.yml` run
+against pi1, or hand-editing k3s config — so there's a fresh restore point
+first. This is the only thing standing between a dead control plane and
+rebuilding from scratch, since a single-server (SQLite) cluster gets no
+automatic etcd snapshots.
+
+**`node-hardware.yml`** — Installs or updates the OLED status display (all
+three Pis) and the GPIO fan (pi2 only), as systemd units. **When to use:**
+after a hardware change — wiring up a new display, moving the fan to a
+different host, or a re-image that wiped `config.txt`. Not routine and not
+scheduled; only click it when hardware actually changed. A `config.txt`
+change reboots the host.
+
+**`run-command.yml`** — Ad-hoc command across the fleet, needs a `cmd`
+variable. **The Run button won't do anything useful here** — the panel
+posts no variables, so it just fails with "No command provided." Use it from
+a terminal instead: `docker exec -it <container> ansible-playbook
+run-command.yml -e "cmd=uptime"`.
+
 ## Options
 
 | Option | Default | Purpose |

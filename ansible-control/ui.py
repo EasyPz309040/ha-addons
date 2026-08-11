@@ -33,6 +33,7 @@ DESCRIPTIONS = {
     "update.yml": "OS patching, one host at a time. Reboots only if the OS asks.",
     "cluster-update.yml": "Cordon, drain, patch, reboot, wait for Ready, uncordon.",
     "backup-datastore.yml": "Stop k3s, archive the datastore, restart, fetch to /share.",
+    "node-hardware.yml": "OLED display (all Pis) and GPIO fan (pi2). Run after hardware changes.",
     "run-command.yml": "Ad-hoc command across the fleet. Needs a cmd variable.",
 }
 
