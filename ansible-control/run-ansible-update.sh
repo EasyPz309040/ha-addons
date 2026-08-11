@@ -2,11 +2,13 @@
 # Runs a playbook from the checked-out private repo, pulling the latest
 # commit first so a long-lived container never runs stale playbooks.
 #
-#   run-ansible-update.sh                     # defaults to update.yml
-#   run-ansible-update.sh cluster-update.yml
+#   run-ansible-update.sh                        # defaults to cluster-update.yml
+#   run-ansible-update.sh provision-host.yml
+#   run-ansible-update.sh provision-host.yml --check   # preview only, changes nothing
 set -u
 
-PLAYBOOK="${1:-update.yml}"
+PLAYBOOK="${1:-cluster-update.yml}"
+MODE="${2:-}"
 LOGDIR=/share/ansible/logs
 DIRFILE=/share/ansible/.playbook_dir
 ENV_FILE=/share/ansible/.addon_env
@@ -17,10 +19,14 @@ SYNC_BEFORE_RUN=true
 
 mkdir -p "${LOGDIR}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-LOG="${LOGDIR}/${PLAYBOOK%.yml}-${STAMP}.log"
+if [ "${MODE}" = "--check" ]; then
+    LOG="${LOGDIR}/${PLAYBOOK%.yml}-preview-${STAMP}.log"
+else
+    LOG="${LOGDIR}/${PLAYBOOK%.yml}-${STAMP}.log"
+fi
 
 {
-    echo "=== $(date -Iseconds) : ${PLAYBOOK} starting ==="
+    echo "=== $(date -Iseconds) : ${PLAYBOOK}${MODE:+ (${MODE})} starting ==="
 
     if [ "${SYNC_BEFORE_RUN}" = "true" ]; then
         /usr/bin/sync-playbooks.sh
@@ -45,7 +51,11 @@ LOG="${LOGDIR}/${PLAYBOOK%.yml}-${STAMP}.log"
 
     ANSIBLE_CONFIG="${PLAYBOOK_DIR}/ansible.cfg"
     export ANSIBLE_CONFIG
-    ansible-playbook "${PLAYBOOK}"
+    if [ "${MODE}" = "--check" ]; then
+        ansible-playbook "${PLAYBOOK}" --check --diff
+    else
+        ansible-playbook "${PLAYBOOK}"
+    fi
     rc=$?
     echo "=== $(date -Iseconds) : ${PLAYBOOK} finished (exit ${rc}) ==="
     exit ${rc}
@@ -53,7 +63,8 @@ LOG="${LOGDIR}/${PLAYBOOK%.yml}-${STAMP}.log"
 
 rc=$?
 
-# Keep the last 30 logs per playbook so /share does not fill up.
+# Keep the last 30 logs per playbook so /share does not fill up. Preview and
+# real-run logs share one counter - both are named ${PLAYBOOK%.yml}-*.log.
 ls -1t "${LOGDIR}/${PLAYBOOK%.yml}"-*.log 2>/dev/null | tail -n +31 | xargs -r rm --
 
 # Surface failure in the add-on log rather than letting cron swallow it.

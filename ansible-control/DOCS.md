@@ -68,26 +68,33 @@ Only one run happens at a time — buttons disable while something is in
 progress. Two concurrent apt runs against the same host would fight, and a
 cordon/drain overlapping an update is worse.
 
-`provision-host.yml` is deliberately **not** offered as a button. Its first run
-against a fresh host is interactive (`--ask-pass`), and it's one-time
-provisioning rather than routine operation.
+`provision-host.yml` gets a **Preview** button alongside **Run** — Preview
+runs `ansible-playbook --check --diff` and changes nothing, so you can see
+what it thinks is wrong before letting it fix anything. The one thing
+neither button can do is bootstrap a completely fresh image: the very first
+run against a host needs an interactive password prompt (`--ask-pass`), so
+that one step still has to happen from a terminal. Every run after that,
+including repairing a node that died, is button-safe.
 
 ## Playbooks
 
 What each button does, and when you'd actually click it.
 
-**`update.yml`** — Plain OS patching, one host at a time. Reboots only if
-the OS asks; does not cordon or drain. **When to use:** this is what the
-scheduled weekly run (`update_schedule`) does by default — click it yourself
-between schedules if you want patches sooner. A rebooting host briefly drops
-whatever pods were on it, so prefer `cluster-update.yml` if that matters to
-you.
+**`provision-host.yml`** — Detects and fixes drift: the `ansible` user and
+its key, base packages, filesystem/kernel/boot config, k3s cluster
+membership, the pi2 NFS export, and the OLED/fan hardware. Everything reads
+current state first and only changes what's actually wrong. **When to use:**
+this is the answer to "a node died" or "something's out of spec" — click
+**Preview** first to see what it would change, then **Run**. Not scheduled;
+there's no routine reason to run it unless you suspect drift or just changed
+something (wiring, the drive, inventory).
 
 **`cluster-update.yml`** — Cordon → drain → patch → reboot → wait for
 `Ready` → uncordon. Workers first, control plane last; a failure still
-uncordons. **When to use:** the safe way to patch when you don't want pods
-disrupted without warning. Switch `update_playbook` to this once you've run
-it manually a few times — it's meant to become the default scheduled job.
+uncordons. **When to use:** this is what the scheduled run (`update_playbook`,
+weekly by default) does — click it yourself between schedules if you want
+patches sooner. It's the only OS-patching playbook; every host here is a k3s
+member, so cordon/drain is never wasted effort.
 
 **`backup-datastore.yml`** — Stops k3s, archives the SQLite datastore and
 TLS material, restarts, fetches the archive to `/share`. **When to use:**
@@ -97,13 +104,6 @@ against pi1, or hand-editing k3s config — so there's a fresh restore point
 first. This is the only thing standing between a dead control plane and
 rebuilding from scratch, since a single-server (SQLite) cluster gets no
 automatic etcd snapshots.
-
-**`node-hardware.yml`** — Installs or updates the OLED status display (all
-three Pis) and the GPIO fan (pi2 only), as systemd units. **When to use:**
-after a hardware change — wiring up a new display, moving the fan to a
-different host, or a re-image that wiped `config.txt`. Not routine and not
-scheduled; only click it when hardware actually changed. A `config.txt`
-change reboots the host.
 
 **`run-command.yml`** — Ad-hoc command across the fleet, needs a `cmd`
 variable. **The Run button won't do anything useful here** — the panel
@@ -119,7 +119,7 @@ run-command.yml -e "cmd=uptime"`.
 | `playbook_branch` | `main` | Branch to track |
 | `playbook_subdir` | `ANSIBLE` | Folder within the repo holding the playbooks |
 | `update_schedule` | `0 3 * * 0` | Cron for the OS update run |
-| `update_playbook` | `update.yml` | Which playbook that schedule runs |
+| `update_playbook` | `cluster-update.yml` | Which playbook that schedule runs |
 | `backup_schedule` | `0 2 * * *` | Cron for the datastore backup |
 | `backup_enabled` | `true` | Whether to schedule backups at all |
 | `sync_before_run` | `true` | Pull the latest playbooks before every run |
@@ -133,6 +133,7 @@ check `docker ps` for the exact name.
 
 ```
 docker exec -it <container> /usr/bin/run-ansible-update.sh cluster-update.yml
+docker exec -it <container> /usr/bin/run-ansible-update.sh provision-host.yml --check
 docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
 ```
 
@@ -144,7 +145,8 @@ records the repo commit it ran against.
 - Live: the add-on's **Log** tab, or `ha addons logs <slug>`.
 - History: `/share/ansible/logs/<playbook>-<timestamp>.log`, pruned to the
   last 30 per playbook. A non-zero exit is echoed to the add-on log so cron
-  can't swallow it.
+  can't swallow it. Preview runs log to `<playbook>-preview-<timestamp>.log`
+  and share that same 30-log budget.
 
 ## Behaviour worth knowing
 

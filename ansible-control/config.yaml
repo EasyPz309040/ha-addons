@@ -20,7 +20,7 @@ options:
   playbook_branch: "main"
   playbook_subdir: "ANSIBLE"
   update_schedule: "0 3 * * 0"
-  update_playbook: "update.yml"
+  update_playbook: "cluster-update.yml"
   backup_schedule: "0 2 * * *"
   backup_enabled: true
   sync_before_run: true

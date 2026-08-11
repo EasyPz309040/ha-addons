@@ -24,16 +24,23 @@ DIRFILE = SHARE / ".playbook_dir"
 LOCK = SHARE / ".run.lock"
 RUNNER = "/usr/bin/run-ansible-update.sh"
 
-# Playbooks that must never be triggered from a web button.
-# provision-host.yml's first run is interactive (--ask-pass) and it is
-# one-time provisioning, not routine operation.
-EXCLUDED = {"provision-host.yml"}
+# Playbooks that must never be triggered from a web button. Empty for now -
+# provision-host.yml used to be here, but only its very first run against a
+# brand-new image (before the ansible user exists) needs the interactive
+# --ask-pass terminal invocation. Every run after that, including
+# self-healing a dead node, is button-safe.
+EXCLUDED = set()
+
+# Playbooks that also get a Preview button, which runs `--check --diff`
+# first so nothing changes until you click Run. provision-host.yml detects
+# and repairs whatever is out of spec, so previewing it before a real run is
+# worth the extra click; the others are narrower and less surprising.
+PREVIEWABLE = {"provision-host.yml"}
 
 DESCRIPTIONS = {
-    "update.yml": "OS patching, one host at a time. Reboots only if the OS asks.",
+    "provision-host.yml": "Detect and fix drift: identity, packages, boot config, k3s join, NFS, hardware.",
     "cluster-update.yml": "Cordon, drain, patch, reboot, wait for Ready, uncordon.",
     "backup-datastore.yml": "Stop k3s, archive the datastore, restart, fetch to /share.",
-    "node-hardware.yml": "OLED display (all Pis) and GPIO fan (pi2). Run after hardware changes.",
     "run-command.yml": "Ad-hoc command across the fleet. Needs a cmd variable.",
 }
 
@@ -112,24 +119,27 @@ def log_text(name, tail_bytes=60000):
         return f"Could not read log: {e}"
 
 
-def start_run(playbook):
+def start_run(playbook, check=False):
     with _lock:
         if running():
             return False, "A run is already in progress."
         if playbook not in playbooks():
             return False, "Unknown playbook."
+        if check and playbook not in PREVIEWABLE:
+            return False, "This playbook has no preview mode."
+        args = [RUNNER, playbook] + (["--check"] if check else [])
         proc = subprocess.Popen(
-            [RUNNER, playbook],
+            args,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
-        LOCK.write_text(json.dumps({"pid": proc.pid, "playbook": playbook}))
+        LOCK.write_text(json.dumps({"pid": proc.pid, "playbook": playbook, "check": check}))
 
         def reap():
             proc.wait()
             LOCK.unlink(missing_ok=True)
 
         threading.Thread(target=reap, daemon=True).start()
-        return True, f"Started {playbook}."
+        return True, f"Started {'preview of ' if check else ''}{playbook}."
 
 
 PAGE = """<!doctype html>
@@ -214,17 +224,21 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode()
         playbook = ""
+        mode = ""
         for part in body.split("&"):
             if part.startswith("playbook="):
                 playbook = part[9:].replace("%2E", ".")
-        ok, msg = start_run(playbook)
+            elif part.startswith("mode="):
+                mode = part[5:]
+        ok, msg = start_run(playbook, check=(mode == "preview"))
         self._send(self.render(notice=msg, good=ok))
 
     def render(self, notice=None, good=True):
         run = running()
         banner = ""
         if run:
-            banner = (f"<div class='banner run'><b>Running:</b> "
+            verb = "Previewing" if run.get("check") else "Running"
+            banner = (f"<div class='banner run'><b>{verb}:</b> "
                       f"{html.escape(run.get('playbook', '?'))} — "
                       f"reload this page to check progress, or open the log below.</div>")
         elif notice:
@@ -239,11 +253,19 @@ class Handler(BaseHTTPRequestHandler):
         for name in pbs:
             desc = DESCRIPTIONS.get(name, "")
             dis = " disabled" if run else ""
+            n = html.escape(name)
+            buttons = ""
+            if name in PREVIEWABLE:
+                buttons += (
+                    "<form method='post'><input type='hidden' name='playbook' value='{n}'>"
+                    "<input type='hidden' name='mode' value='preview'>"
+                    "<button type='submit'{dis}>Preview</button></form>".format(n=n, dis=dis))
+            buttons += (
+                "<form method='post'><input type='hidden' name='playbook' value='{n}'>"
+                "<button type='submit'{dis}>Run</button></form>".format(n=n, dis=dis))
             cards.append(
                 "<div class='card'><div class='txt'><b>{n}</b><p>{d}</p></div>"
-                "<form method='post'><input type='hidden' name='playbook' value='{n}'>"
-                "<button type='submit'{dis}>Run</button></form></div>".format(
-                    n=html.escape(name), d=html.escape(desc), dis=dis))
+                "{buttons}</div>".format(n=n, d=html.escape(desc), buttons=buttons))
 
         logs = []
         for entry in recent_logs():
