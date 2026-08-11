@@ -68,7 +68,7 @@ Only one run happens at a time — buttons disable while something is in
 progress. Two concurrent apt runs against the same host would fight, and a
 cordon/drain overlapping an update is worse.
 
-`provision-host.yml` gets a **Preview** button alongside **Run** — Preview
+`provision-cluster.yml` gets a **Preview** button alongside **Run** — Preview
 runs `ansible-playbook --check --diff` and changes nothing, so you can see
 what it thinks is wrong before letting it fix anything. The one thing
 neither button can do is bootstrap a completely fresh image: the very first
@@ -80,7 +80,7 @@ including repairing a node that died, is button-safe.
 
 What each button does, and when you'd actually click it.
 
-**`provision-host.yml`** — Detects and fixes drift: the `ansible` user and
+**`provision-cluster.yml`** — Detects and fixes drift: the `ansible` user and
 its key, base packages, filesystem/kernel/boot config, k3s cluster
 membership, the pi2 NFS export, and the OLED/fan hardware. Everything reads
 current state first and only changes what's actually wrong. **When to use:**
@@ -105,11 +105,48 @@ first. This is the only thing standing between a dead control plane and
 rebuilding from scratch, since a single-server (SQLite) cluster gets no
 automatic etcd snapshots.
 
+> **Placeholder, not a verified backup.** The logic is written and runs
+> clean, but nobody has yet taken one of its archives and actually restored
+> a control plane from it. A green run here means "the tar command
+> succeeded," not "this is a tested recovery path." Treat it as
+> aspirational until that's been exercised for real — see the backlog in
+> `ACTION-PLAN.md` in the private repo.
+
 **`run-command.yml`** — Ad-hoc command across the fleet, needs a `cmd`
 variable. **The Run button won't do anything useful here** — the panel
 posts no variables, so it just fails with "No command provided." Use it from
-a terminal instead: `docker exec -it <container> ansible-playbook
-run-command.yml -e "cmd=uptime"`.
+a terminal instead:
+
+```
+docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
+```
+
+### `run-command.yml` cookbook
+
+All of these follow the same shape —
+`ansible-playbook run-command.yml -e "cmd=<command>"`, add
+`-e "use_shell=true"` for anything with a pipe or redirect, and
+`--limit <host>` to target one host instead of the fleet:
+
+| What | Command |
+|---|---|
+| Disk space on every host | `-e "cmd=df -h /"` |
+| k3s node status | `-e "cmd=/usr/local/bin/k3s kubectl get nodes -o wide"` --limit pi1 |
+| Is k3s actually running here? | `-e "cmd=systemctl is-active k3s k3s-agent" -e "become_cmd=false"` |
+| Pods stuck or crashlooping | `-e "cmd=/usr/local/bin/k3s kubectl get pods -A --field-selector=status.phase!=Running"` --limit pi1 |
+| NFS mount actually present | `-e "cmd=mount \| grep nfs" -e "use_shell=true"` |
+| Confirm the NFS export | `-e "cmd=showmount -e 192.168.0.102"` --limit pi1 |
+| iptables backend in use | `-e "cmd=update-alternatives --query iptables"` |
+| Current fsck settings | `-e "cmd=tune2fs -l /dev/mmcblk0p2" -e "use_shell=true"` (adjust device per host) |
+| Reboot pending? | `-e "cmd=test -f /var/run/reboot-required && echo yes \|\| echo no" -e "use_shell=true"` |
+| OLED/fan service status | `-e "cmd=systemctl status oled-status" -e "become_cmd=false"` |
+| Recent journal for k3s | `-e "cmd=journalctl -u k3s --since '1 hour ago' --no-pager" -e "use_shell=true"` |
+| Free memory | `-e "cmd=free -h"` |
+| Uptime and load, whole fleet | `-e "cmd=uptime"` |
+
+The `-o wide`/`showmount` examples only make sense against pi1 (the control
+plane) — use `--limit pi1` or they'll fail loudly on every worker instead of
+just being skipped.
 
 ## Options
 
@@ -133,7 +170,7 @@ check `docker ps` for the exact name.
 
 ```
 docker exec -it <container> /usr/bin/run-ansible-update.sh cluster-update.yml
-docker exec -it <container> /usr/bin/run-ansible-update.sh provision-host.yml --check
+docker exec -it <container> /usr/bin/run-ansible-update.sh provision-cluster.yml --check
 docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
 ```
 

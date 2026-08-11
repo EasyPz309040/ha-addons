@@ -5,12 +5,18 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.22
 FROM $BUILD_FROM
 
+# The Supervisor passes BUILD_VERSION automatically at build time, sourced
+# from this add-on's config.yaml "version:" field - so that field is the
+# only place the version needs to be typed. Re-declare the ARG after FROM;
+# args declared before FROM don't survive into the build stage.
+ARG BUILD_VERSION
+
 # ansible-core, not the "ansible" metapackage. The playbooks in the private
 # repo deliberately use only ansible.builtin modules, so no Galaxy
 # collections are needed and the build has no network dependency beyond apk.
 RUN apk add --no-cache ansible-core openssh-client git tar python3
 
-LABEL io.hass.version="0.5.0" \
+LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="addon" \
       io.hass.arch="amd64|aarch64"
 

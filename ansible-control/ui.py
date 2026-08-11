@@ -25,23 +25,40 @@ LOCK = SHARE / ".run.lock"
 RUNNER = "/usr/bin/run-ansible-update.sh"
 
 # Playbooks that must never be triggered from a web button. Empty for now -
-# provision-host.yml used to be here, but only its very first run against a
+# provision-cluster.yml used to be here, but only its very first run against a
 # brand-new image (before the ansible user exists) needs the interactive
 # --ask-pass terminal invocation. Every run after that, including
 # self-healing a dead node, is button-safe.
 EXCLUDED = set()
 
 # Playbooks that also get a Preview button, which runs `--check --diff`
-# first so nothing changes until you click Run. provision-host.yml detects
+# first so nothing changes until you click Run. provision-cluster.yml detects
 # and repairs whatever is out of spec, so previewing it before a real run is
 # worth the extra click; the others are narrower and less surprising.
-PREVIEWABLE = {"provision-host.yml"}
+PREVIEWABLE = {"provision-cluster.yml"}
 
 DESCRIPTIONS = {
-    "provision-host.yml": "Detect and fix drift: identity, packages, boot config, k3s join, NFS, hardware.",
-    "cluster-update.yml": "Cordon, drain, patch, reboot, wait for Ready, uncordon.",
-    "backup-datastore.yml": "Stop k3s, archive the datastore, restart, fetch to /share.",
-    "run-command.yml": "Ad-hoc command across the fleet. Needs a cmd variable.",
+    "provision-cluster.yml": (
+        "Detects and fixes drift fleet-wide: identity, packages, boot config, "
+        "k3s membership, the pi2 NFS export, OLED/fan hardware. Self-healing "
+        "and safe to re-run any time, including to repair a node that died — "
+        "Preview first to see what it would change."
+    ),
+    "cluster-update.yml": (
+        "Cordon, drain, patch, reboot, wait for Ready, uncordon — one host at "
+        "a time, workers first, control plane last. The only OS-patching "
+        "playbook; this is what the weekly schedule runs by default."
+    ),
+    "backup-datastore.yml": (
+        "Stops k3s, archives the SQLite datastore and TLS material, restarts, "
+        "fetches to /share. Placeholder: written but not yet verified to "
+        "actually restore from — don't treat a green run as a tested backup."
+    ),
+    "run-command.yml": (
+        "Ad-hoc command across the fleet. This button will just fail with "
+        "\"No command provided\" — it needs a cmd variable the panel can't "
+        "supply. See DOCS.md for a command cookbook; run from a terminal."
+    ),
 }
 
 _lock = threading.Lock()

@@ -3,8 +3,8 @@
 # commit first so a long-lived container never runs stale playbooks.
 #
 #   run-ansible-update.sh                        # defaults to cluster-update.yml
-#   run-ansible-update.sh provision-host.yml
-#   run-ansible-update.sh provision-host.yml --check   # preview only, changes nothing
+#   run-ansible-update.sh provision-cluster.yml
+#   run-ansible-update.sh provision-cluster.yml --check   # preview only, changes nothing
 set -u
 
 PLAYBOOK="${1:-cluster-update.yml}"
