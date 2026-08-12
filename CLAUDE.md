@@ -11,8 +11,9 @@ the docs. Keys live on the HAOS box at `/share/ansible/.ssh/`.
 ## Release mechanics
 
 - `version:` in `ansible-control/config.yaml` **must be bumped** or the
-  Supervisor offers no update. Keep `io.hass.version` in the Dockerfile in
-  step.
+  Supervisor offers no update. That's the only place it's typed — the
+  Dockerfile's `io.hass.version` reads `ARG BUILD_VERSION`, which the
+  Supervisor supplies automatically from `config.yaml` at build time.
 - `slug:` must **not** change — it's the container name and the ingress path.
   Changing it makes HA treat this as a different add-on and loses the install.
 - `.gitattributes` forces LF. A CRLF shell script dies on Linux with

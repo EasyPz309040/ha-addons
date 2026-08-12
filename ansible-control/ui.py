@@ -24,6 +24,21 @@ DIRFILE = SHARE / ".playbook_dir"
 LOCK = SHARE / ".run.lock"
 RUNNER = "/usr/bin/run-ansible-update.sh"
 
+# osifont-lgpl3fe.woff: https://github.com/hikikomori82/osifont, GNU LGPL v3
+# with font exception - embedding it in this page's CSS doesn't put the page
+# itself under LGPL, that's what the font exception is for. Copied alongside
+# ui.py in the image and served from its own cached route (./font.woff)
+# rather than inlined as a data URI - this page gets reloaded a lot while a
+# run is in progress, and inlining would resend the ~80 KB font on every one
+# of those reloads instead of once. A missing file just 404s that one
+# request; the font stack below still falls back to system-ui/Segoe UI.
+FONT_PATH = Path(__file__).parent / "osifont-lgpl3fe.woff"
+FONT_FACE = (
+    "@font-face { font-family: 'osifont'; src: url(./font.woff) format('woff'); "
+    "font-display: swap; }"
+    if FONT_PATH.is_file() else ""
+)
+
 # Playbooks that must never be triggered from a web button. Empty for now -
 # provision-cluster.yml used to be here, but only its very first run against a
 # brand-new image (before the ansible user exists) needs the interactive
@@ -163,8 +178,9 @@ PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
 content="width=device-width,initial-scale=1"><title>Ansible Control</title>
 <style>
+{font_face}
 :root {{ color-scheme: light dark; }}
-body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+body {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px; background: transparent; }}
 h1 {{ font-size: 1.15rem; margin: 0 0 4px; }}
 .meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
@@ -208,11 +224,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # keep the add-on log for Ansible output, not HTTP noise
 
-    def _send(self, body, status=200, ctype="text/html; charset=utf-8"):
-        data = body.encode()
+    def _send(self, body, status=200, ctype="text/html; charset=utf-8", headers=None):
+        data = body if isinstance(body, bytes) else body.encode()
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
 
@@ -221,6 +239,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self._path()
+        if p.endswith("/font.woff"):
+            try:
+                data = FONT_PATH.read_bytes()
+            except OSError:
+                return self._send("Not found.", status=404, ctype="text/plain")
+            # Immutable: the filename would change if the font ever did.
+            # Safe for the browser to cache indefinitely.
+            return self._send(data, ctype="font/woff",
+                               headers={"Cache-Control": "public, max-age=31536000, immutable"})
         if p.endswith("/log"):
             name = ""
             if "?" in self.path:
@@ -295,7 +322,7 @@ class Handler(BaseHTTPRequestHandler):
         if not logs:
             logs.append("<li>No runs yet.</li>")
 
-        return PAGE.format(commit=html.escape(current_commit()),
+        return PAGE.format(font_face=FONT_FACE, commit=html.escape(current_commit()),
                            banner=banner, cards="".join(cards),
                            logs="".join(logs))
 

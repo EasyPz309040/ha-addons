@@ -26,6 +26,7 @@ LABEL io.hass.version="${BUILD_VERSION}" \
 COPY run.sh /run.sh
 COPY sync-playbooks.sh /usr/bin/sync-playbooks.sh
 COPY ui.py /usr/bin/ui.py
+COPY osifont-lgpl3fe.woff /usr/bin/osifont-lgpl3fe.woff
 COPY run-ansible-update.sh /usr/bin/run-ansible-update.sh
 RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh /usr/bin/sync-playbooks.sh /usr/bin/ui.py
 
