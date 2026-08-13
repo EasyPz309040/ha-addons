@@ -57,8 +57,13 @@ echo "${SCHEDULE} /usr/bin/run-ansible-update.sh ${PLAYBOOK}" > "${CRONTAB}"
 bashio::log.info "Update schedule: ${SCHEDULE} (${PLAYBOOK})"
 
 if bashio::config.true 'backup_enabled'; then
-    echo "${BACKUP_SCHEDULE} /usr/bin/run-ansible-update.sh backup-datastore.yml" >> "${CRONTAB}"
-    bashio::log.info "Backup schedule: ${BACKUP_SCHEDULE} (backup-datastore.yml)"
+    # ';' not '&&' - the datastore backup failing shouldn't skip the
+    # secrets backup, they're independent. Sequential on one cron line
+    # rather than two separate entries so they never run concurrently
+    # against the same control plane (nothing else enforces that for
+    # cron-triggered runs - only the web UI's own button click does).
+    echo "${BACKUP_SCHEDULE} /usr/bin/run-ansible-update.sh backup-datastore.yml; /usr/bin/run-ansible-update.sh backup-secrets.yml" >> "${CRONTAB}"
+    bashio::log.info "Backup schedule: ${BACKUP_SCHEDULE} (backup-datastore.yml, then backup-secrets.yml)"
 fi
 
 if bashio::config.true 'sync_before_run'; then

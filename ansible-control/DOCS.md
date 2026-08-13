@@ -76,6 +76,16 @@ run against a host needs an interactive password prompt (`--ask-pass`), so
 that one step still has to happen from a terminal. Every run after that,
 including repairing a node that died, is button-safe.
 
+The panel parses the Preview's log rather than just linking to it: a **Last
+preview** card lists, per host, exactly what would change ("k3s NOT Ready —
+would install as agent and join the cluster", a config line that would be
+added, and so on). A host that's simply offline is listed separately as
+**unreachable**, not shown as a failure — on a home fleet, not everything is
+always powered on, and the run still shows you the plan for whichever hosts
+it *could* reach. The **Recent runs** list reflects this
+too: a run where the only issue was some hosts being offline shows an amber
+"N host(s) offline" instead of the red "exit 3" it used to.
+
 ## Playbooks
 
 What each button does, and when you'd actually click it.
@@ -111,6 +121,15 @@ automatic etcd snapshots.
 > succeeded," not "this is a tested recovery path." Treat it as
 > aspirational until that's been exercised for real — see the backlog in
 > `ACTION-PLAN.md` in the private repo.
+
+**`backup-secrets.yml`** — Dumps every Kubernetes Secret (except
+service-account tokens, which are noise — regenerated automatically) to
+`/share`, live, with no k3s downtime. **When to use:** also runs nightly,
+right after `backup-datastore.yml` on the same schedule. This is the backup
+that actually matters if pi1 dies: Kubernetes workloads and OS/cluster
+membership both already rebuild from git automatically (Flux, and
+`provision-cluster.yml`), so Secrets are the one piece of state that
+doesn't come back on its own.
 
 **`run-command.yml`** — Ad-hoc command across the fleet, needs a `cmd`
 variable. **The Run button won't do anything useful here** — the panel
@@ -157,7 +176,7 @@ just being skipped.
 | `playbook_subdir` | `ANSIBLE` | Folder within the repo holding the playbooks |
 | `update_schedule` | `0 3 * * 0` | Cron for the OS update run |
 | `update_playbook` | `cluster-update.yml` | Which playbook that schedule runs |
-| `backup_schedule` | `0 2 * * *` | Cron for the datastore backup |
+| `backup_schedule` | `0 2 * * *` | Cron for the nightly backups (datastore, then secrets) |
 | `backup_enabled` | `true` | Whether to schedule backups at all |
 | `sync_before_run` | `true` | Pull the latest playbooks before every run |
 | `run_on_start` | `false` | Run the update playbook immediately on start |

@@ -52,6 +52,52 @@ EXCLUDED = set()
 # worth the extra click; the others are narrower and less surprising.
 PREVIEWABLE = {"provision-cluster.yml"}
 
+# Scraped straight from ansible-playbook's default callback output - no
+# custom callback plugin, so no Galaxy collection needed to get it. A host
+# offline for its own connection fails its first task with this exact line;
+# a host whose *delegated* k3s check target (the control plane) is offline
+# doesn't produce this, which is exactly why provision-cluster.yml sets
+# ignore_unreachable on those tasks instead of letting them abort the host.
+UNREACHABLE_RE = re.compile(r'^fatal: \[([^\]]+)\]: UNREACHABLE!', re.MULTILINE)
+# Every "Plan: ..." / "Note ..." task in provision-cluster.yml is a debug
+# task, which the default callback renders as `ok: [host] => { "msg": "..." }`.
+MSG_BLOCK_RE = re.compile(
+    r'^(?:ok|changed): \[([^\]]+)\] => \{\s*\n\s*"msg":\s*"((?:[^"\\]|\\.)*)"',
+    re.MULTILINE)
+RECAP_RE = re.compile(
+    r'^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)',
+    re.MULTILINE)
+
+
+def parse_preview(text):
+    """Turn a --check --diff log into {unreachable: [...], plans: {host: [msg,...]}}."""
+    unreachable = sorted(set(UNREACHABLE_RE.findall(text)))
+    plans = {}
+    for host, msg in MSG_BLOCK_RE.findall(text):
+        msg = msg.replace('\\"', '"').replace('\\\\', '\\')
+        plans.setdefault(host, []).append(msg)
+    return {"unreachable": unreachable, "plans": plans}
+
+
+def classify_run(tail_text, rc):
+    """(css_class, label) for a finished run, from its exit code and recap.
+
+    Exit 3 is Ansible's "some hosts unreachable" code. If nothing actually
+    failed and the only issue is hosts being offline, that's routine for a
+    home fleet where not everything is always powered on - not a failure,
+    so it gets its own neutral status rather than the red "bad" one.
+    """
+    if rc == "0":
+        return "ok", "ok"
+    if rc == "3":
+        recap = RECAP_RE.findall(tail_text)
+        if recap and all(int(failed) == 0 for *_, failed in recap):
+            offline = [h for h, _ok, _ch, un, _fa in recap if int(un) > 0]
+            if offline:
+                return "partial", f"{len(offline)} host(s) offline"
+    return "bad", f"exit {rc}"
+
+
 DESCRIPTIONS = {
     "provision-cluster.yml": (
         "Detects and fixes drift fleet-wide: identity, packages, boot config, "
@@ -68,6 +114,12 @@ DESCRIPTIONS = {
         "Stops k3s, archives the SQLite datastore and TLS material, restarts, "
         "fetches to /share. Placeholder: written but not yet verified to "
         "actually restore from — don't treat a green run as a tested backup."
+    ),
+    "backup-secrets.yml": (
+        "Dumps every Kubernetes Secret (except SA tokens) to /share, live, "
+        "no downtime. Workloads and OS state already rebuild from git — "
+        "Secrets are the one thing that doesn't, so this is the backup that "
+        "actually matters for recovering a dead control plane."
     ),
     "run-command.yml": (
         "Ad-hoc command across the fleet. This button will just fail with "
@@ -130,6 +182,7 @@ def recent_logs(limit=8):
     out = []
     for f in files[:limit]:
         rc = "?"
+        tail = ""
         try:
             tail = f.read_text(errors="replace")[-4000:]
             m = re.findall(r"finished \(exit (\d+)\)", tail)
@@ -137,7 +190,8 @@ def recent_logs(limit=8):
                 rc = m[-1]
         except OSError:
             pass
-        out.append({"name": f.name, "rc": rc})
+        cls, label = ("?", "?") if rc == "?" else classify_run(tail, rc)
+        out.append({"name": f.name, "rc": rc, "cls": cls, "label": label})
     return out
 
 
@@ -174,15 +228,42 @@ def start_run(playbook, check=False):
         return True, f"Started {'preview of ' if check else ''}{playbook}."
 
 
+def render_preview_summary(name, summary):
+    plans, unreachable = summary["plans"], summary["unreachable"]
+    parts = ["<b>Last preview</b>"]
+    if plans:
+        def strip_host(host, msg):
+            # provision-cluster.yml's Plan/Note messages lead with
+            # "<hostname>: " for readability in the raw log, where the
+            # surrounding `ok: [host] =>` doesn't stand out as clearly as
+            # it does here next to the bolded host label - drop the
+            # now-redundant repeat.
+            prefix = host + ": "
+            return msg[len(prefix):] if msg.startswith(prefix) else msg
+        items = "".join(
+            f"<li><b>{html.escape(h)}</b>: {html.escape(strip_host(h, m))}</li>"
+            for h in sorted(plans) for m in plans[h])
+        parts.append(f"<ul>{items}</ul>")
+    else:
+        parts.append("<p>No planned changes on any reachable host.</p>")
+    if unreachable:
+        parts.append(
+            "<p class='unreachable'>Offline, not previewed (not a failure): "
+            + html.escape(", ".join(unreachable)) + "</p>")
+    parts.append(f"<p><a href='./log?name={html.escape(name)}'>View full log</a></p>")
+    return "<div class='card summary'><div class='txt'>" + "".join(parts) + "</div></div>"
+
+
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
 content="width=device-width,initial-scale=1"><title>Ansible Control</title>
 <style>
 {font_face}
 :root {{ color-scheme: light dark; }}
-body {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
+body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px; background: transparent; }}
-h1 {{ font-size: 1.15rem; margin: 0 0 4px; }}
+h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 1.15rem; margin: 0 0 4px; }}
 .meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 12px;
@@ -205,6 +286,10 @@ li {{ padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.18);
 li a {{ color: inherit; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
+.partial {{ color: #b26a00; font-weight: 600; }}
+.summary ul {{ list-style: disc; padding-left: 18px; margin: 6px 0 0; }}
+.summary li {{ display: list-item; border: none; padding: 2px 0; font-size: .82rem; }}
+.unreachable {{ opacity: .8; font-size: .82rem; margin: 10px 0 0; }}
 pre {{ white-space: pre-wrap; word-break: break-word; font-size: .75rem;
   background: rgba(127,127,127,.1); padding: 12px; border-radius: 8px;
   max-height: 60vh; overflow: auto; }}
@@ -212,6 +297,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .75rem;
 <h1>Ansible Control</h1>
 <div class="meta">Playbooks at commit {commit}</div>
 {banner}
+{preview_summary}
 {cards}
 <h2>Recent runs</h2>
 <ul>{logs}</ul>
@@ -288,6 +374,13 @@ class Handler(BaseHTTPRequestHandler):
         elif notice:
             banner = f"<div class='banner'>{html.escape(notice)}</div>"
 
+        preview_summary = ""
+        if not run:
+            latest = recent_logs(limit=1)
+            if latest and "-preview-" in latest[0]["name"]:
+                summary = parse_preview(log_text(latest[0]["name"]))
+                preview_summary = render_preview_summary(latest[0]["name"], summary)
+
         cards = []
         pbs = playbooks()
         if not pbs:
@@ -313,18 +406,16 @@ class Handler(BaseHTTPRequestHandler):
 
         logs = []
         for entry in recent_logs():
-            cls = "ok" if entry["rc"] == "0" else "bad"
-            label = "ok" if entry["rc"] == "0" else f"exit {entry['rc']}"
             logs.append(
                 "<li><span class='{c}'>{l}</span>"
                 "<a href='./log?name={n}'>{n}</a></li>".format(
-                    c=cls, l=html.escape(label), n=html.escape(entry["name"])))
+                    c=entry["cls"], l=html.escape(entry["label"]), n=html.escape(entry["name"])))
         if not logs:
             logs.append("<li>No runs yet.</li>")
 
         return PAGE.format(font_face=FONT_FACE, commit=html.escape(current_commit()),
-                           banner=banner, cards="".join(cards),
-                           logs="".join(logs))
+                           banner=banner, preview_summary=preview_summary,
+                           cards="".join(cards), logs="".join(logs))
 
 
 if __name__ == "__main__":
