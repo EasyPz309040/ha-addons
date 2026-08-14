@@ -5,9 +5,12 @@ Ingress means Home Assistant proxies this panel behind its own auth, so no
 port is exposed on the LAN and there is no separate login. All paths must be
 relative - HA serves the panel under a generated prefix that changes.
 
-One run at a time, enforced with a lock file: two concurrent apt runs against
-the same host would fight, and a cordon/drain overlapping an update is worse.
+One run at a time, enforced with a flock in run-ansible-update.sh - that's
+the script both cron and this UI invoke, so it's the one place able to
+serialize scheduled runs against button clicks. This module only takes an
+advisory look at that same lock file to show status; it does not own it.
 """
+import fcntl
 import html
 import json
 import os
@@ -21,7 +24,8 @@ PORT = int(os.environ.get("INGRESS_PORT", "8099"))
 SHARE = Path("/share/ansible")
 LOGDIR = SHARE / "logs"
 DIRFILE = SHARE / ".playbook_dir"
-LOCK = SHARE / ".run.lock"
+LOCK = SHARE / ".run.lock"       # flock target only - never holds content
+STATUS = SHARE / ".run.status"   # JSON written by the current/last run
 RUNNER = "/usr/bin/run-ansible-update.sh"
 
 # osifont-lgpl3fe.woff: https://github.com/hikikomori82/osifont, GNU LGPL v3
@@ -160,19 +164,33 @@ def current_commit():
 
 
 def running():
+    """Best-effort read of run-ansible-update.sh's lock, for display only.
+
+    Tries to take the same flock the script holds for the run's duration:
+    getting it means nothing is running (release it again immediately),
+    failing to get it means a run is in progress - authoritative, no pid
+    file or /proc check needed, and it can't go stale across a container
+    restart the way a recorded pid could.
+    """
     if not LOCK.exists():
         return None
     try:
-        data = json.loads(LOCK.read_text())
-    except Exception:
+        f = open(LOCK)
+    except OSError:
         return None
-    pid = data.get("pid")
-    # A stale lock after a container restart would block every future run,
-    # so verify the process actually exists rather than trusting the file.
-    if pid and not Path(f"/proc/{pid}").exists():
-        LOCK.unlink(missing_ok=True)
-        return None
-    return data
+    try:
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            try:
+                return json.loads(STATUS.read_text())
+            except Exception:
+                return {"playbook": "unknown", "check": False}
+        else:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            return None
+    finally:
+        f.close()
 
 
 def recent_logs(limit=8):
@@ -206,6 +224,12 @@ def log_text(name, tail_bytes=60000):
 
 
 def start_run(playbook, check=False):
+    # This check is just a fast, friendly "already running" message - the
+    # real enforcement is the flock run-ansible-update.sh takes on LOCK
+    # itself. A run started here can still lose a race to a cron-triggered
+    # one between this check and the script actually acquiring the lock;
+    # in that rare case the script exits 99 and logs why, and this call
+    # reports "Started" optimistically. Recent runs / the log show the truth.
     with _lock:
         if running():
             return False, "A run is already in progress."
@@ -214,17 +238,10 @@ def start_run(playbook, check=False):
         if check and playbook not in PREVIEWABLE:
             return False, "This playbook has no preview mode."
         args = [RUNNER, playbook] + (["--check"] if check else [])
-        proc = subprocess.Popen(
+        subprocess.Popen(
             args,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
-        LOCK.write_text(json.dumps({"pid": proc.pid, "playbook": playbook, "check": check}))
-
-        def reap():
-            proc.wait()
-            LOCK.unlink(missing_ok=True)
-
-        threading.Thread(target=reap, daemon=True).start()
         return True, f"Started {'preview of ' if check else ''}{playbook}."
 
 

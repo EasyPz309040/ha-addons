@@ -14,7 +14,16 @@ ARG BUILD_VERSION
 # ansible-core, not the "ansible" metapackage. The playbooks in the private
 # repo deliberately use only ansible.builtin modules, so no Galaxy
 # collections are needed and the build has no network dependency beyond apk.
-RUN apk add --no-cache ansible-core openssh-client git tar python3
+#
+# sshpass: --ask-pass shells out to it for every non-interactive parallel
+# SSH connection, even when the prompt itself is interactive - without it
+# ansible refuses password auth outright. Needed for provision-cluster.yml's
+# documented first-bootstrap invocation (-u pi --ask-pass), before the
+# ansible user/key exist on a freshly imaged host.
+#
+# util-linux: guarantees a real `flock`, which run-ansible-update.sh uses to
+# serialize cron and button-click runs against each other.
+RUN apk add --no-cache ansible-core openssh-client git tar python3 sshpass util-linux
 
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="addon" \
