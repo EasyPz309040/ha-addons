@@ -1,5 +1,5 @@
 name: "EasyPz Ansible Control Node"
-version: "0.5.8"
+version: "0.5.9"
 slug: "ansible-control"
 description: "Ansible control node for the home fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/ansible-control"

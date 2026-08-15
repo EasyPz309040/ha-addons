@@ -279,14 +279,14 @@ def render_preview_summary(name, summary):
 
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
-content="width=device-width,initial-scale=1"><title>Ansible Control</title>
+content="width=device-width,initial-scale=1"><title>Ansible Cluster Control</title>
 <style>
 {font_face}
 :root {{ color-scheme: light dark; }}
 body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px; background: transparent; }}
 h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-size: 1.15rem; margin: 0 0 4px; }}
+  font-size: 1.6rem; margin: 0 0 4px; }}
 .meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 12px;
