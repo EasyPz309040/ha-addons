@@ -37,6 +37,11 @@ COPY sync-playbooks.sh /usr/bin/sync-playbooks.sh
 COPY ui.py /usr/bin/ui.py
 COPY osifont-lgpl3fe.woff /usr/bin/osifont-lgpl3fe.woff
 COPY run-ansible-update.sh /usr/bin/run-ansible-update.sh
+# Read by ui.py's own /docs route (rendered inside the ingress panel) - not
+# just relied on via the Supervisor's separate Documentation tab, since that
+# tab's own URL scheme has already changed once across HA versions (see
+# CLAUDE.md gotchas) and a link to it from inside the panel would be fragile.
+COPY DOCS.md /usr/bin/DOCS.md
 RUN chmod a+x /run.sh /usr/bin/run-ansible-update.sh /usr/bin/sync-playbooks.sh /usr/bin/ui.py
 
 CMD [ "/run.sh" ]

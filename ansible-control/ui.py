@@ -43,6 +43,12 @@ FONT_FACE = (
     if FONT_PATH.is_file() else ""
 )
 
+# Same file the Supervisor renders as this add-on's separate Documentation
+# tab, served here too via ./docs so it's reachable without leaving the
+# panel - that tab's own URL has already moved once across HA versions (see
+# CLAUDE.md gotchas), so linking to it directly from here would be fragile.
+DOCS_PATH = Path(__file__).parent / "DOCS.md"
+
 # Playbooks that must never be triggered from a web button. Empty for now -
 # provision-cluster.yml used to be here, but only its very first run against a
 # brand-new image (before the ansible user exists) needs the interactive
@@ -312,7 +318,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .75rem;
   max-height: 60vh; overflow: auto; }}
 </style></head><body>
 <h1>Ansible Control</h1>
-<div class="meta">Playbooks at commit {commit}</div>
+<div class="meta">Playbooks at commit {commit} &middot; <a href="./docs">Docs</a></div>
 {banner}
 {preview_summary}
 {cards}
@@ -351,6 +357,18 @@ class Handler(BaseHTTPRequestHandler):
             # Safe for the browser to cache indefinitely.
             return self._send(data, ctype="font/woff",
                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        if p.endswith("/docs"):
+            try:
+                text = DOCS_PATH.read_text(errors="replace")
+            except OSError:
+                text = "DOCS.md not found in this image."
+            body = ("<!doctype html><meta charset='utf-8'>"
+                    "<style>body{font-family:system-ui;padding:16px;max-width:780px;margin:0 auto}"
+                    "pre{white-space:pre-wrap;word-break:break-word;font-size:.8rem;"
+                    "background:rgba(127,127,127,.1);padding:12px;border-radius:8px}"
+                    "</style><p><a href='./'>&larr; back</a></p><pre>"
+                    + html.escape(text) + "</pre>")
+            return self._send(body)
         if p.endswith("/log"):
             name = ""
             if "?" in self.path:
