@@ -320,7 +320,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .75rem;
   background: rgba(127,127,127,.1); padding: 12px; border-radius: 8px;
   max-height: 60vh; overflow: auto; }}
 </style></head><body>
-<h1>Ansible Control</h1>
+<h1>Ansible Cluster Control</h1>
 <div class="meta">Playbooks at commit {commit} &middot; <a href="./docs">Docs</a></div>
 {banner}
 {preview_summary}
