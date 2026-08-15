@@ -300,8 +300,11 @@ button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
 button:hover:not(:disabled) {{ background: rgba(127,127,127,.25); }}
 button:disabled {{ opacity: .45; cursor: not-allowed; }}
 .banner {{ padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
-  font-size: .85rem; border: 1px solid rgba(127,127,127,.35); }}
+  font-size: .85rem; border: 1px solid rgba(127,127,127,.35);
+  background: rgba(127,127,127,.08); }}
 .run {{ background: rgba(255,170,0,.16); }}
+.notice-ok {{ background: rgba(46,125,50,.14); }}
+.notice-bad {{ background: rgba(198,40,40,.14); }}
 h2 {{ font-size: .95rem; margin: 22px 0 8px; }}
 ul {{ list-style: none; padding: 0; margin: 0; }}
 li {{ padding: 6px 0; border-bottom: 1px solid rgba(127,127,127,.18);
@@ -407,7 +410,8 @@ class Handler(BaseHTTPRequestHandler):
                       f"{html.escape(run.get('playbook', '?'))} — "
                       f"reload this page to check progress, or open the log below.</div>")
         elif notice:
-            banner = f"<div class='banner'>{html.escape(notice)}</div>"
+            cls = "banner " + ("notice-ok" if good else "notice-bad")
+            banner = f"<div class='{cls}'>{html.escape(notice)}</div>"
 
         preview_summary = ""
         if not run:
