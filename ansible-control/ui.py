@@ -136,6 +136,12 @@ DESCRIPTIONS = {
         "\"No command provided\" — it needs a cmd variable the panel can't "
         "supply. See DOCS.md for a command cookbook; run from a terminal."
     ),
+    "flux-reconcile.yml": (
+        "Forces Flux to pull PiCluster git and apply now, instead of "
+        "waiting out its own poll interval (up to 10 minutes). Same effect "
+        "as `flux reconcile kustomization workloads --with-source`, without "
+        "needing the flux CLI anywhere in the fleet."
+    ),
 }
 
 _lock = threading.Lock()

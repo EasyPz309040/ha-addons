@@ -140,6 +140,15 @@ a terminal instead:
 docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
 ```
 
+**`flux-reconcile.yml`** — Forces Flux to pull the `PiCluster` git repo and
+apply it now, instead of waiting out its own poll interval (up to 10
+minutes for the `workloads` Kustomization). **When to use:** click it right
+after pushing a chart/manifest change you want live immediately — same
+effect as running `flux reconcile kustomization workloads -n flux-system
+--with-source` by hand, without needing the `flux` CLI installed anywhere
+in the fleet (it never has been). The Run button works here — no variables
+needed.
+
 ### `run-command.yml` cookbook
 
 All of these follow the same shape —
