@@ -15,7 +15,7 @@ members without rebooting itself.
 
 Authenticates to the managed hosts. Generate it in the Terminal add-on:
 
-```
+```bash
 mkdir -p /share/ansible/.ssh
 ssh-keygen -t ed25519 -f /share/ansible/.ssh/id_ansible -C "ansible@haos" -N ""
 cat /share/ansible/.ssh/id_ansible.pub
@@ -26,7 +26,7 @@ every managed host, and give that user passwordless sudo.
 
 Then seed the host keys, so unattended runs can't hang on a prompt:
 
-```
+```bash
 ssh-keyscan -H 192.168.0.100 192.168.0.101 192.168.0.102 192.168.0.103 \
   >> /share/ansible/.ssh/known_hosts
 ```
@@ -35,7 +35,7 @@ ssh-keyscan -H 192.168.0.100 192.168.0.101 192.168.0.102 192.168.0.103 \
 
 A **separate** key, read-only, used only to fetch playbooks:
 
-```
+```bash
 ssh-keygen -t ed25519 -f /share/ansible/.ssh/id_deploy -C "haos-deploy" -N ""
 cat /share/ansible/.ssh/id_deploy.pub
 ```
@@ -136,7 +136,7 @@ variable. **The Run button won't do anything useful here** — the panel
 posts no variables, so it just fails with "No command provided." Use it from
 a terminal instead:
 
-```
+```bash
 docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
 ```
 
@@ -151,30 +151,67 @@ needed.
 
 ### `run-command.yml` cookbook
 
-All of these follow the same shape —
-`ansible-playbook run-command.yml -e "cmd=<command>"`, add
-`-e "use_shell=true"` for anything with a pipe or redirect, and
-`--limit <host>` to target one host instead of the fleet:
+Every command below is complete and ready to paste — set `CONTAINER` once
+per terminal session (see [Running on demand](#running-on-demand) for how
+to find the name), then copy any line as-is:
 
-| What | Command |
-|---|---|
-| Disk space on every host | `-e "cmd=df -h /"` |
-| k3s node status | `-e "cmd=/usr/local/bin/k3s kubectl get nodes -o wide"` --limit pi1 |
-| Is k3s actually running here? | `-e "cmd=systemctl is-active k3s k3s-agent" -e "become_cmd=false"` |
-| Pods stuck or crashlooping | `-e "cmd=/usr/local/bin/k3s kubectl get pods -A --field-selector=status.phase!=Running"` --limit pi1 |
-| NFS mount actually present | `-e "cmd=mount \| grep nfs" -e "use_shell=true"` |
-| Confirm the NFS export | `-e "cmd=showmount -e 192.168.0.102"` --limit pi1 |
-| iptables backend in use | `-e "cmd=update-alternatives --query iptables"` |
-| Current fsck settings | `-e "cmd=tune2fs -l /dev/mmcblk0p2" -e "use_shell=true"` (adjust device per host) |
-| Reboot pending? | `-e "cmd=test -f /var/run/reboot-required && echo yes \|\| echo no" -e "use_shell=true"` |
-| OLED/fan service status | `-e "cmd=systemctl status oled-status" -e "become_cmd=false"` |
-| Recent journal for k3s | `-e "cmd=journalctl -u k3s --since '1 hour ago' --no-pager" -e "use_shell=true"` |
-| Free memory | `-e "cmd=free -h"` |
-| Uptime and load, whole fleet | `-e "cmd=uptime"` |
+```bash
+CONTAINER=<container>
 
-The `-o wide`/`showmount` examples only make sense against pi1 (the control
-plane) — use `--limit pi1` or they'll fail loudly on every worker instead of
-just being skipped.
+# --- whole fleet -----------------------------------------------------------
+
+# Disk space on every host
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=df -h /"
+
+# Is k3s actually running here?
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=systemctl is-active k3s k3s-agent" -e "become_cmd=false"
+
+# NFS mount actually present
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=mount | grep nfs" -e "use_shell=true"
+
+# iptables backend in use
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=update-alternatives --query iptables"
+
+# Reboot pending?
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=test -f /var/run/reboot-required && echo yes || echo no" -e "use_shell=true"
+
+# OLED/fan service status
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=systemctl status oled-status" -e "become_cmd=false"
+
+# Recent journal for k3s
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=journalctl -u k3s --since '1 hour ago' --no-pager" -e "use_shell=true"
+
+# Free memory
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=free -h"
+
+# Uptime and load
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=uptime"
+
+# --- control plane only (pi1) -----------------------------------------------
+# These fail loudly on a worker instead of just being skipped — always scope
+# them with --limit.
+
+# k3s node status
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=/usr/local/bin/k3s kubectl get nodes -o wide" --limit pi1
+
+# Pods stuck or crashlooping
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=/usr/local/bin/k3s kubectl get pods -A --field-selector=status.phase!=Running" --limit pi1
+
+# Confirm the NFS export
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=showmount -e 192.168.0.102" --limit pi1
+
+# --- per host, adjust as needed ---------------------------------------------
+
+# Current fsck settings — device is /dev/sda2 on pi1 (USB SSD boot),
+# /dev/mmcblk0p2 on pi2/pi3/queen (SD boot)
+docker exec -it $CONTAINER ansible-playbook run-command.yml -e "cmd=tune2fs -l /dev/mmcblk0p2" -e "use_shell=true" --limit pi2
+```
+
+The shape behind all of these:
+`ansible-playbook run-command.yml -e "cmd=<command>"` — add
+`-e "use_shell=true"` for anything with a pipe or redirect, `-e
+"become_cmd=false"` to run as the `ansible` user instead of root, and
+`--limit <host>` to target one host instead of the whole fleet.
 
 ## Options
 
@@ -196,7 +233,7 @@ Local add-on containers are named `addon_local_<slug>` for locally installed
 add-ons, or `addon_<repo-hash>_<slug>` when installed from a repository —
 check `docker ps` for the exact name.
 
-```
+```bash
 docker exec -it <container> /usr/bin/run-ansible-update.sh cluster-update.yml
 docker exec -it <container> /usr/bin/run-ansible-update.sh provision-cluster.yml --check
 docker exec -it <container> ansible-playbook run-command.yml -e "cmd=uptime"
