@@ -203,6 +203,48 @@ def _on_data(args):
         _write_state(state)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Makes urlopen surface a 3xx as an HTTPError instead of following it.
+
+    Confirmed empirically (not just assumed) against a real 302 response:
+    returning None from redirect_request causes urllib to raise HTTPError
+    with the original status code and Location header intact, rather than
+    silently fetching whatever the redirect points to.
+    """
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def resolve_saxo_login_redirect():
+    """Ask xWeb where /saxo/login would send a browser, without going there.
+
+    Called from ui.py's own /saxo-login route (server-side, on HAOS - a
+    normal LAN device, not a sandboxed browser) so the browser itself
+    never has to make a cross-origin request to XWEB_HOST at all. That
+    request from a public-origin ingress page (e.g. viewing the panel via
+    a public hostname) to a private-range IP is exactly what triggers
+    Chrome's Local Network Access prompt - and even Allow wouldn't help,
+    since the browser genuinely can't route to a LAN IP from outside the
+    LAN in the first place. Relaying xWeb's real Location (Saxo's public
+    authorize URL) sidesteps both problems: the browser only ever talks
+    to the add-on's own origin, then goes straight to Saxo.
+
+    Returns the Location header string, or None if xWeb didn't respond
+    with a redirect at all (unreachable, unexpected response, etc).
+    """
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        opener.open(f"http://{XWEB_HOST}/saxo/login", timeout=10)
+        return None  # a 200 here would be unexpected - GetAuthorizeUrl() always redirects
+    except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            return e.headers.get("Location")
+        return None
+    except Exception as e:
+        log.warning("resolve_saxo_login_redirect failed: %s", e)
+        return None
+
+
 def trigger_real_run():
     """Fire a real (billed) analysis run. Returns (ok: bool, message: str).
 

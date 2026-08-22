@@ -245,7 +245,7 @@ def render_page(notice=None, good=True):
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
         saxo_pill_cls=saxo_pill_cls, saxo_pill_text=html.escape(saxo_pill_text),
-        saxo_login_url=html.escape(market_agent.SAXO_LOGIN_URL),
+        saxo_login_url="./saxo-login",
         conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
         last_update_text=html.escape(last_update_text),
         next_check_text=html.escape(next_check_text),
@@ -266,7 +266,31 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _redirect(self, location):
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _path(self):
+        return self.path.split("?")[0].rstrip("/") or "/"
+
     def do_GET(self):
+        if self._path().endswith("/saxo-login"):
+            # Relayed server-side (see market_agent.resolve_saxo_login_redirect)
+            # so the browser never makes a cross-origin request to XWEB_HOST
+            # itself - that's what triggers Chrome's Local Network Access
+            # prompt when viewing the panel via a public hostname, and it
+            # wouldn't even work from outside the LAN regardless of Allow/Deny.
+            location = market_agent.resolve_saxo_login_redirect()
+            if location:
+                return self._redirect(location)
+            return self._send(
+                "<!doctype html><meta charset='utf-8'>"
+                "<p>Could not reach xWeb to start Saxo login. "
+                "Check that xWeb is reachable and try again.</p>"
+                "<p><a href='./'>&larr; back</a></p>",
+                status=502)
         return self._send(render_page())
 
     def do_POST(self):

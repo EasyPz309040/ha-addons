@@ -37,14 +37,26 @@ a connectivity problem.
 
 A colored pill next to the symbol shows whether xWeb currently has a
 valid Saxo session — green "Saxo: connected", red "Saxo: login required",
-or grey "Saxo: unknown" before the first tick arrives. The pill is a
-link straight to Saxo's login flow, defaulting to
-`http://<xweb_host>/saxo/login` — LAN-only, but zero configuration
-needed. If you want that link (and the one in push notifications) to
-still work when tapped away from home, set `saxo_login_url` below to
-your own WAN-reachable hostname for it — that value lives in your own
-Supervisor config, not in this public repo, so it never puts a domain
-name in source.
+or grey "Saxo: unknown" before the first tick arrives.
+
+Clicking the pill doesn't send your browser to xWeb directly — it hits
+this add-on's own `/saxo-login` route, which asks xWeb server-side
+(from HAOS, a normal LAN device) where the login flow redirects to, and
+relays that straight to your browser. Two reasons: your browser never
+makes a cross-origin request to a LAN IP (which is exactly what trips
+Chrome's Local Network Access prompt when viewing this panel through a
+public hostname), and it works identically whether you're on the LAN or
+not, since it's riding the same ingress tunnel already getting you to
+this panel.
+
+Push notifications are different — tapped from outside any HA page
+entirely, so they still need a real, standalone URL rather than a
+relative path. That link defaults to `http://<xweb_host>/saxo/login`
+(LAN-only, zero configuration needed). If you want *that* link to work
+when tapped away from home, set `saxo_login_url` below to your own
+WAN-reachable hostname for it — that value lives in your own Supervisor
+config, not in this public repo, so it never puts a domain name in
+source.
 
 ## Notifications
 
