@@ -44,11 +44,15 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 TOPIC = "marketagent.preview"
 HUB_URL = f"http://{XWEB_HOST}/streamHub"
-# WAN-reachable on purpose - kumuruku.com/saxo/login is one of the two
-# paths the narrow WAN Ingress allows through (see Home/CLAUDE.md), so
-# this link works even when the notification is seen away from home.
-# xweb.kumuruku.com is LAN-only and would not.
-SAXO_LOGIN_URL = "https://kumuruku.com/saxo/login"
+# Deliberately built from XWEB_HOST, not a literal hostname - this repo
+# is public, and no domain name belongs in its source regardless of
+# reachability trade-offs. Cost: this link only works on the LAN, not
+# from a phone away from home (an earlier version used xWeb's public
+# WAN hostname instead, which was reachable off-LAN but doesn't belong
+# in a public repo's source). If WAN reachability for this specific
+# link matters later, it needs to come from a user-supplied add-on
+# option, never a literal here.
+SAXO_LOGIN_URL = f"http://{XWEB_HOST}/saxo/login"
 
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"

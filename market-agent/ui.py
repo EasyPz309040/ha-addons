@@ -46,14 +46,15 @@ th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
 .pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
-  border-radius: 999px; font-size: .75rem; font-weight: 600; }}
+  border-radius: 999px; font-size: .75rem; font-weight: 600; text-decoration: none; }}
 .pill::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }}
 .pill-ok {{ background: rgba(46,125,50,.14); color: #2e7d32; }}
 .pill-warn {{ background: rgba(198,40,40,.14); color: #c62828; }}
 .pill-unknown {{ background: rgba(127,127,127,.14); color: var(--text-faint, #888); }}
+a.pill:hover {{ filter: brightness(1.15); }}
 </style></head><body>
 <h1>Market Agent</h1>
-<div class="meta">{symbol} &middot; <span class="pill {saxo_pill_cls}">{saxo_pill_text}</span></div>
+<div class="meta">{symbol} &middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" title="Open Saxo login">{saxo_pill_text}</a></div>
 {banner}
 <div class="card">
 <canvas id="chart" width="900" height="180"></canvas>
@@ -138,6 +139,7 @@ def render_page(notice=None, good=True):
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
         saxo_pill_cls=saxo_pill_cls, saxo_pill_text=html.escape(saxo_pill_text),
+        saxo_login_url=html.escape(market_agent.SAXO_LOGIN_URL),
         rows="".join(rows), candles_json=candles_json)
 
 

@@ -13,18 +13,24 @@ every 5 minutes, free — see xWeb's `CLAUDE.md`) shows up here as it
 happens. A dropped connection (xWeb pod restart, network blip) reconnects
 on its own.
 
+## Saxo login status
+
+A colored pill next to the symbol shows whether xWeb currently has a
+valid Saxo session — green "Saxo: connected", red "Saxo: login required",
+or grey "Saxo: unknown" before the first tick arrives. The pill is a
+link straight to Saxo's login flow (`http://<xweb_host>/saxo/login`),
+so a red pill is one click to fix.
+
 ## Notifications
 
 When a tick's threshold condition flips from not-met to met, a push
 notification fires via `notify_service` (below) — once per transition,
 not repeated every tick while it stays true.
 
-If the **Run real analysis now** button hits a Saxo 401 (token not logged
-in), it also notifies, with a login link to `kumuruku.com/saxo/login` —
-deliberately the WAN hostname, so the link works even away from home.
-This currently only covers the manual button: a token expiring silently
-between clicks during the background loop's own routine ticks isn't
-detected or notified on yet.
+Saxo login state gets the same treatment: a push fires once when a tick
+shows login is required, and once more when it resolves — covering both
+the background loop's routine ticks and the manual **Run real analysis
+now** button, not just the button.
 
 Notifications need no secret or long-lived token — this add-on has its
 own Supervisor, which proxies the Home Assistant API automatically
