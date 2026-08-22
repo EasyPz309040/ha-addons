@@ -23,7 +23,17 @@ entrypoint. There is nothing environment-specific or secret in it, so making
 it public costs nothing and lets Home Assistant install and update the add-on
 natively, with no personal access token stored in the Supervisor.
 
-Everything that *is* specific — playbooks, inventory, host addresses — lives
-in a private repo, pulled at container start using a read-only deploy key
-kept on `/share`. Credentials never enter this repo or the Supervisor's
-configuration.
+The two add-ons keep this true in different ways:
+
+- **`cluster-control`** — everything specific (playbooks, inventory, host
+  addresses) lives in a private repo, pulled at container start using a
+  read-only deploy key kept on `/share`. Credentials never enter this repo
+  or the Supervisor's configuration.
+- **`market-agent`** — carries no separate content to protect in the first
+  place. It's a thin client: a SignalR subscription and two HTTP calls
+  against xWeb's own already-deployed endpoints. The actual trading logic —
+  trigger thresholds, the Claude system prompt, the Claude API key — lives
+  in xWeb (a private repo) and is never duplicated or shipped here. The one
+  address this add-on hardcodes as a default (`xweb_host`, a private LAN IP)
+  is documented in its own `DOCS.md`, satisfying the "no host addresses
+  beyond what's already in the docs" rule below.

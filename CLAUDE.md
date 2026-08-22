@@ -5,6 +5,17 @@ Ansible playbooks `cluster-control` runs live in the private `Home` repo
 and are cloned at runtime; `market-agent` has no external content to
 clone, it just talks to xWeb over the LAN.
 
+`market-agent` specifically ships **zero proprietary logic**: no trigger
+thresholds, no Claude system prompt, no Claude API key. It's a thin
+SignalR subscriber (`/streamHub`, topic `marketagent.preview`) plus two
+plain HTTP calls into xWeb's already-deployed `/claude/MarketAgent`
+endpoint — all the actual analysis logic (`MarketTriggerAnalysis`, the
+prompt, the Claude call itself) stays in xWeb, a private repo, and is
+never duplicated here. Keep it that way: if a future change to this
+add-on starts computing a trigger condition, formatting a prompt, or
+holding a Claude key locally instead of calling xWeb for it, that
+logic has leaked into a public repo and needs to move back.
+
 ## THIS REPO IS PUBLIC
 
 No keys, no tokens, no inventory, no host addresses beyond what's already in

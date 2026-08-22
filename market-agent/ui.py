@@ -53,7 +53,7 @@ th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,
 <canvas id="chart" width="900" height="180"></canvas>
 </div>
 <form method="post" action="./run">
-<button type="submit">Run real analysis now (billed Claude call)</button>
+<button type="submit">Run AI Trend Analysis (billed Claude call)</button>
 </form>
 <h2>Recent ticks</h2>
 <table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th></tr>
@@ -90,7 +90,7 @@ def render_page(notice=None, good=True):
         cls = "banner " + ("notice-ok" if good else "notice-bad")
         banner = f"<div class='{cls}'>{html.escape(notice)}</div>"
     elif not entries:
-        banner = "<div class='banner'>No ticks received yet - waiting on xWeb's first broadcast.</div>"
+        banner = "<div class='banner'>No ticks received yet - waiting on market agent workflow's first broadcast.</div>"
 
     rows = []
     for e in reversed(entries):
