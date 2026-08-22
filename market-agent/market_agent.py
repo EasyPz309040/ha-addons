@@ -62,7 +62,7 @@ def _read_state():
     try:
         return json.loads(STATEFILE.read_text())
     except Exception:
-        return {"last_triggered": False}
+        return {"last_triggered": False, "last_saxo_auth_required": False}
 
 
 def _write_state(state):
@@ -144,15 +144,37 @@ def _on_data(args):
     entry["receivedAt"] = time.time()
     _append(entry)
 
-    metrics = result.get("metrics") or {}
-    triggered = bool(metrics.get("triggered"))
+    # PascalCase throughout - MarketWorkflowResult/TriggerMetrics have no
+    # [JsonProperty] overrides, so JsonConvert.SerializeObject emits keys
+    # matching the C# property names exactly (Status, Metrics.Triggered,
+    # Metrics.Reasons, ...). This is NOT the same casing as the HTTP
+    # endpoint (/claude/MarketAgent), which goes through a different
+    # serializer configured for camelCase - don't copy field names from
+    # one to the other.
+    status = result.get("Status")
+    saxo_auth_required = status == "SaxoAuthRequired"
+    metrics = result.get("Metrics") or {}
+    triggered = bool(metrics.get("Triggered"))
+
     with _state_lock:
         state = _read_state()
-        if triggered and not state.get("last_triggered"):
-            reasons = ", ".join(metrics.get("reasons") or [])
-            notify("Market Agent",
-                   f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
-        state["last_triggered"] = triggered
+
+        if saxo_auth_required and not state.get("last_saxo_auth_required"):
+            notify("Market Agent", f"Saxo login required: {SAXO_LOGIN_URL}")
+        elif state.get("last_saxo_auth_required") and not saxo_auth_required:
+            notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
+        state["last_saxo_auth_required"] = saxo_auth_required
+
+        # A SaxoAuthRequired tick carries no metrics at all - don't let a
+        # stale "still triggered" state silently persist through however
+        # many auth-required ticks happen before someone logs back in.
+        if not saxo_auth_required:
+            if triggered and not state.get("last_triggered"):
+                reasons = ", ".join(metrics.get("Reasons") or [])
+                notify("Market Agent",
+                       f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
+            state["last_triggered"] = triggered
+
         _write_state(state)
 
 

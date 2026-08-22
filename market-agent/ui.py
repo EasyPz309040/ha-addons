@@ -45,9 +45,15 @@ th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
+.pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border-radius: 999px; font-size: .75rem; font-weight: 600; }}
+.pill::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }}
+.pill-ok {{ background: rgba(46,125,50,.14); color: #2e7d32; }}
+.pill-warn {{ background: rgba(198,40,40,.14); color: #c62828; }}
+.pill-unknown {{ background: rgba(127,127,127,.14); color: var(--text-faint, #888); }}
 </style></head><body>
 <h1>Market Agent</h1>
-<div class="meta">{symbol}</div>
+<div class="meta">{symbol} &middot; <span class="pill {saxo_pill_cls}">{saxo_pill_text}</span></div>
 {banner}
 <div class="card">
 <canvas id="chart" width="900" height="180"></canvas>
@@ -68,7 +74,7 @@ if (candles.length > 1 && c.getContext) {{
   const w = c.clientWidth || 900, h = 180;
   c.width = w * dpr; c.height = h * dpr;
   ctx.scale(dpr, dpr);
-  const vals = candles.map(k => (k.closeBid + k.closeAsk) / 2);
+  const vals = candles.map(k => (k.CloseBid + k.CloseAsk) / 2);
   const min = Math.min(...vals), max = Math.max(...vals);
   const pad = 8;
   const x = i => pad + (i / (vals.length - 1)) * (w - pad * 2);
@@ -84,6 +90,11 @@ if (candles.length > 1 && c.getContext) {{
 
 
 def render_page(notice=None, good=True):
+    # PascalCase throughout below (Status, Metrics, Triggered, Reasons,
+    # EvalCandles, CloseBid/CloseAsk) - matches the C# property names on
+    # MarketWorkflowResult/TriggerMetrics exactly, since JsonConvert has no
+    # naming overrides for them. This is NOT the same casing the HTTP
+    # endpoint uses (camelCase, a different serializer) - don't mix them up.
     entries = market_agent.history(limit=30)
     banner = ""
     if notice:
@@ -92,31 +103,41 @@ def render_page(notice=None, good=True):
     elif not entries:
         banner = "<div class='banner'>No ticks received yet - waiting on market agent workflow service's first broadcast.</div>"
 
+    latest_status = entries[-1].get("Status") if entries else None
+    if latest_status is None:
+        saxo_pill_cls, saxo_pill_text = "pill-unknown", "Saxo: unknown"
+    elif latest_status == "SaxoAuthRequired":
+        saxo_pill_cls, saxo_pill_text = "pill-warn", "Saxo: login required"
+    else:
+        saxo_pill_cls, saxo_pill_text = "pill-ok", "Saxo: connected"
+
     rows = []
     for e in reversed(entries):
-        metrics = e.get("metrics") or {}
-        triggered = bool(metrics.get("triggered"))
-        reasons = ", ".join(metrics.get("reasons") or [])
+        status = e.get("Status")
+        metrics = e.get("Metrics") or {}
+        triggered = bool(metrics.get("Triggered"))
+        reasons = ", ".join(metrics.get("Reasons") or [])
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(e.get("receivedAt", 0)))
         rows.append(
             "<tr><td>{ts}</td><td class='{cls}'>{status}</td>"
             "<td class='{tcls}'>{trig}</td><td>{reasons}</td></tr>".format(
                 ts=ts,
-                cls="ok" if e.get("status") == "Preview" else "bad",
-                status=html.escape(str(e.get("status", "?"))),
+                cls="bad" if status == "SaxoAuthRequired" else "ok",
+                status=html.escape(str(status or "?")),
                 tcls="triggered" if triggered else "",
                 trig="yes" if triggered else "no",
                 reasons=html.escape(reasons)))
     if not rows:
         rows.append("<tr><td colspan='4'>No ticks yet.</td></tr>")
 
-    candles = (entries[-1].get("evalCandles") if entries else None) or []
+    candles = (entries[-1].get("EvalCandles") if entries else None) or []
     candles_json = json.dumps([
-        {"closeBid": k.get("closeBid", 0), "closeAsk": k.get("closeAsk", 0)}
+        {"CloseBid": k.get("CloseBid", 0), "CloseAsk": k.get("CloseAsk", 0)}
         for k in candles])
 
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
+        saxo_pill_cls=saxo_pill_cls, saxo_pill_text=html.escape(saxo_pill_text),
         rows="".join(rows), candles_json=candles_json)
 
 
