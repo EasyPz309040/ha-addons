@@ -20,10 +20,18 @@ SignalR hub is actually up right now — green "xWeb: connected", amber
 "xWeb: connecting…"/"xWeb: reconnecting…", or amber "xWeb: disconnected"
 if even the automatic reconnect has dropped and a fresh connection is
 being rebuilt. This says the pipe to xWeb is open, not that xWeb's own
-loop is still ticking on schedule — pair it with "Last update" (next to
-it) to judge that: if the connection pill is green but the last update
-was hours ago, that's more likely xWeb's own loop being idle (e.g.
-market closed) than a connectivity problem.
+loop is still ticking on schedule.
+
+Two more lines say what the loop is actually doing: **"Last update"**
+(how long ago the most recent tick arrived) and **"Next check"** (when
+the next one's expected). "Next check" is exact only when the market's
+closed — xWeb tells us the precise reopen time and it's shown as
+"Market closed — reopens in Xh Ym". Otherwise it's labelled
+"(estimated)": this add-on isn't told xWeb's configured poll interval,
+so it infers one from the gap between the last two ticks. If the
+connection pill is green but "Last update" is far older than "Next
+check" ever predicted, that's more likely xWeb's loop being stuck than
+a connectivity problem.
 
 ## Saxo login status
 

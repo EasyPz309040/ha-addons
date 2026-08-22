@@ -12,6 +12,7 @@ import html
 import json
 import os
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import market_agent
@@ -44,6 +45,75 @@ def _relative_time(ts):
     if hours < 36:
         return f"{int(hours)}h ago"
     return f"{int(hours / 24)}d ago"
+
+
+def _format_span(seconds):
+    seconds = max(0, int(seconds))
+    if seconds < 90:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes}m"
+    hours = minutes // 60
+    return f"{hours}h {minutes % 60}m"
+
+
+def _parse_dotnet_dt(s):
+    """Parse a Newtonsoft-serialized UTC DateTime (RunAt, NextRetryAfter).
+
+    Always has a trailing Z (RunAt/NextRetryAfter are always DateTime.UtcNow
+    or derived from it on the xWeb side) and up to 7 fractional-second
+    digits (.NET ticks), one more than datetime.fromisoformat tolerates -
+    truncate to microseconds rather than assume a fixed precision.
+    """
+    if not s:
+        return None
+    try:
+        s = s.rstrip("Z")
+        if "." in s:
+            head, frac = s.split(".", 1)
+            s = f"{head}.{frac[:6]}"
+        return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _next_check_text(entries):
+    """What the loop is expected to do next, and how confidently we know it.
+
+    xWeb's loop has two modes: a flat poll interval normally, or - when the
+    market's closed - sleeping until an exact reopen time it tells us via
+    NextRetryAfter. We only ever get the *interval itself* (not exposed in
+    the payload) by observing the gap between two consecutive non-closed
+    ticks, so that case is explicitly labelled "estimated"; the
+    market-closed case is exact, straight from xWeb.
+    """
+    if not entries:
+        return ""
+    latest = entries[-1]
+    now = datetime.now(timezone.utc)
+
+    if latest.get("Status") == "MarketClosed":
+        reopen = _parse_dotnet_dt(latest.get("NextRetryAfter"))
+        if reopen:
+            remaining = (reopen - now).total_seconds()
+            if remaining <= 0:
+                return "Market closed — reopening any moment"
+            return f"Market closed — reopens in {_format_span(remaining)}"
+        return "Market closed"
+
+    if len(entries) >= 2:
+        last_run = _parse_dotnet_dt(latest.get("RunAt"))
+        prev_run = _parse_dotnet_dt(entries[-2].get("RunAt"))
+        if last_run and prev_run and entries[-2].get("Status") != "MarketClosed":
+            interval = (last_run - prev_run).total_seconds()
+            if interval > 0:
+                remaining = interval - (now - last_run).total_seconds()
+                if remaining <= 0:
+                    return "Next check: any moment (estimated)"
+                return f"Next check: ~{_format_span(remaining)} (estimated)"
+
+    return "Next check: unknown yet"
 
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
@@ -84,7 +154,8 @@ a.pill:hover {{ filter: brightness(1.15); }}
 <div class="meta">{symbol}
 &middot; <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
 &middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" title="Open Saxo login">{saxo_pill_text}</a>
-&middot; {last_update_text}</div>
+&middot; {last_update_text}
+&middot; {next_check_text}</div>
 {banner}
 <div class="card">
 <canvas id="chart" width="900" height="180"></canvas>
@@ -145,6 +216,7 @@ def render_page(notice=None, good=True):
     conn_pill_cls, conn_pill_text = CONNECTION_PILLS.get(
         market_agent.connection_status(), ("pill-unknown", "xWeb: unknown"))
     last_update_text = "Last update: " + _relative_time(entries[-1].get("receivedAt") if entries else None)
+    next_check_text = _next_check_text(entries)
 
     rows = []
     for e in reversed(entries):
@@ -176,6 +248,7 @@ def render_page(notice=None, good=True):
         saxo_login_url=html.escape(market_agent.SAXO_LOGIN_URL),
         conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
         last_update_text=html.escape(last_update_text),
+        next_check_text=html.escape(next_check_text),
         rows="".join(rows), candles_json=candles_json)
 
 
