@@ -90,7 +90,7 @@ def render_page(notice=None, good=True):
         cls = "banner " + ("notice-ok" if good else "notice-bad")
         banner = f"<div class='{cls}'>{html.escape(notice)}</div>"
     elif not entries:
-        banner = "<div class='banner'>No ticks received yet - waiting on market agent workflow's first broadcast.</div>"
+        banner = "<div class='banner'>No ticks received yet - waiting on market agent workflow service's first broadcast.</div>"
 
     rows = []
     for e in reversed(entries):
