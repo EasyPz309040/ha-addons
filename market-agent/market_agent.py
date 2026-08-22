@@ -44,15 +44,14 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 TOPIC = "marketagent.preview"
 HUB_URL = f"http://{XWEB_HOST}/streamHub"
-# Deliberately built from XWEB_HOST, not a literal hostname - this repo
-# is public, and no domain name belongs in its source regardless of
-# reachability trade-offs. Cost: this link only works on the LAN, not
-# from a phone away from home (an earlier version used xWeb's public
-# WAN hostname instead, which was reachable off-LAN but doesn't belong
-# in a public repo's source). If WAN reachability for this specific
-# link matters later, it needs to come from a user-supplied add-on
-# option, never a literal here.
-SAXO_LOGIN_URL = f"http://{XWEB_HOST}/saxo/login"
+# No domain name belongs in this repo's source - it's public. Defaults to
+# XWEB_HOST (LAN-only, but zero configuration needed). A user who wants
+# this link to survive being tapped from a notification away from home
+# can set saxo_login_url in the add-on's own config to their own WAN
+# hostname - that value lives in their Supervisor's stored config, never
+# in git, so it never puts a domain in the repo.
+_SAXO_LOGIN_URL_OVERRIDE = os.environ.get("SAXO_LOGIN_URL", "").strip()
+SAXO_LOGIN_URL = _SAXO_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
 
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"

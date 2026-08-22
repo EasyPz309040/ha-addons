@@ -13,4 +13,5 @@ exec env \
   XWEB_HOST="$(bashio::config 'xweb_host')" \
   MARKET_AGENT_SYMBOL="$(bashio::config 'market_agent_symbol')" \
   NOTIFY_SERVICE="$(bashio::config 'notify_service')" \
+  SAXO_LOGIN_URL="$(bashio::config 'saxo_login_url')" \
   python3 /usr/bin/ui.py

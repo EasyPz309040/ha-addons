@@ -18,8 +18,13 @@ on its own.
 A colored pill next to the symbol shows whether xWeb currently has a
 valid Saxo session — green "Saxo: connected", red "Saxo: login required",
 or grey "Saxo: unknown" before the first tick arrives. The pill is a
-link straight to Saxo's login flow (`http://<xweb_host>/saxo/login`),
-so a red pill is one click to fix.
+link straight to Saxo's login flow, defaulting to
+`http://<xweb_host>/saxo/login` — LAN-only, but zero configuration
+needed. If you want that link (and the one in push notifications) to
+still work when tapped away from home, set `saxo_login_url` below to
+your own WAN-reachable hostname for it — that value lives in your own
+Supervisor config, not in this public repo, so it never puts a domain
+name in source.
 
 ## Notifications
 
@@ -50,6 +55,7 @@ silently skipped — everything else still works.
 | `xweb_host` | `192.168.0.201` | LAN address of xWeb's `xweb-lan` Service |
 | `market_agent_symbol` | `XAGUSD` | Symbol this panel tracks |
 | `notify_service` | *(empty)* | HA notify service name for pushes — pushes are silently skipped until this is set |
+| `saxo_login_url` | *(empty)* | Overrides the Saxo login link (pill + notifications) with your own WAN-reachable URL. Defaults to `http://<xweb_host>/saxo/login` (LAN-only) if left empty |
 
 ## Logs
 

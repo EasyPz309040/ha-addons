@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.1.1"
+version: "1.2.0"
 slug: "market-agent"
 description: "Live view of xWeb's Market Agent loop: price chart, recent ticks, and an on-demand real analysis run, with push notifications when the movement threshold is met."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
@@ -20,7 +20,9 @@ options:
   xweb_host: "192.168.0.201"
   market_agent_symbol: "XAGUSD"
   notify_service: ""
+  saxo_login_url: ""
 schema:
   xweb_host: str
   market_agent_symbol: str
   notify_service: str
+  saxo_login_url: str
