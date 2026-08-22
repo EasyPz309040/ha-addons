@@ -153,7 +153,7 @@ a.pill:hover {{ filter: brightness(1.15); }}
 <h1>Market Agent</h1>
 <div class="meta">{symbol}
 &middot; <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
-&middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" title="Open Saxo login">{saxo_pill_text}</a>
+&middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" target="_blank" rel="noopener noreferrer" title="Open Saxo login">{saxo_pill_text}</a>
 &middot; {last_update_text}
 &middot; {next_check_text}</div>
 {banner}
