@@ -1,5 +1,4 @@
-# Home Assistant add-on: EasyPz Home Ops. Ansible fleet control plus a
-# Market Agent panel fed live from xWeb's SignalR hub.
+# Home Assistant add-on: Ansible control node.
 #
 # BUILD_FROM is supplied by the Supervisor with the correct architecture base
 # image. Hardcoding a base breaks the build on any other arch.
@@ -26,16 +25,6 @@ ARG BUILD_VERSION
 # serialize cron and button-click runs against each other.
 RUN apk add --no-cache ansible-core openssh-client git tar python3 sshpass util-linux
 
-# py3-pip + signalrcore: the Market Agent panel subscribes to xWeb's
-# SignalR hub (/streamHub) instead of polling it. This is the add-on's
-# first dependency beyond apk - the build now needs PyPI reachable too,
-# not just Alpine's own mirrors. --break-system-packages: Alpine's
-# system Python enforces PEP 668 (externally-managed-environment);
-# there's no competing system package to protect here, this is a
-# single-purpose container.
-RUN apk add --no-cache py3-pip && \
-    pip install --no-cache-dir --break-system-packages signalrcore
-
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="addon" \
       io.hass.arch="amd64|aarch64"
@@ -46,7 +35,6 @@ LABEL io.hass.version="${BUILD_VERSION}" \
 COPY run.sh /run.sh
 COPY sync-playbooks.sh /usr/bin/sync-playbooks.sh
 COPY ui.py /usr/bin/ui.py
-COPY market_agent.py /usr/bin/market_agent.py
 COPY osifont-lgpl3fe.woff /usr/bin/osifont-lgpl3fe.woff
 COPY run-ansible-update.sh /usr/bin/run-ansible-update.sh
 # Read by ui.py's own /docs route (rendered inside the ingress panel) - not

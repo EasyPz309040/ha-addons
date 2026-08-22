@@ -13,7 +13,8 @@ https://github.com/EasyPz309040/ha-addons
 
 | Add-on | What it does |
 |---|---|
-| [EasyPz Home Ops](home-ops/) | Runs Ansible playbooks against a home fleet on a schedule (playbooks pulled from a separate private repo before every run), plus a live Market Agent panel fed from xWeb. |
+| [EasyPz Cluster Control](cluster-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo before every run. |
+| [EasyPz Market Agent](market-agent/) | Live view of xWeb's Market Agent loop — price chart, recent ticks, on-demand real analysis, push notifications on trigger. |
 
 ## Why this repo is public and separate
 
