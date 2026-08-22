@@ -18,6 +18,33 @@ import market_agent
 
 PORT = int(os.environ.get("INGRESS_PORT", "8099"))
 
+# connection_status() values -> (pill class, pill text). Says whether the
+# pipe to xWeb is up, not whether xWeb's own loop is still ticking - that's
+# the honest limit of what this add-on can actually know from its side.
+CONNECTION_PILLS = {
+    "connected":    ("pill-ok",      "xWeb: connected"),
+    "connecting":   ("pill-unknown", "xWeb: connecting…"),
+    "reconnecting": ("pill-warn",    "xWeb: reconnecting…"),
+    "disconnected": ("pill-warn",    "xWeb: disconnected"),
+}
+
+
+def _relative_time(ts):
+    if not ts:
+        return "never"
+    delta = time.time() - ts
+    if delta < 5:
+        return "just now"
+    if delta < 90:
+        return f"{int(delta)}s ago"
+    minutes = delta / 60
+    if minutes < 90:
+        return f"{int(minutes)}m ago"
+    hours = minutes / 60
+    if hours < 36:
+        return f"{int(hours)}h ago"
+    return f"{int(hours / 24)}d ago"
+
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
 content="width=device-width,initial-scale=1"><title>Market Agent</title>
@@ -54,7 +81,10 @@ th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,
 a.pill:hover {{ filter: brightness(1.15); }}
 </style></head><body>
 <h1>Market Agent</h1>
-<div class="meta">{symbol} &middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" title="Open Saxo login">{saxo_pill_text}</a></div>
+<div class="meta">{symbol}
+&middot; <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
+&middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" title="Open Saxo login">{saxo_pill_text}</a>
+&middot; {last_update_text}</div>
 {banner}
 <div class="card">
 <canvas id="chart" width="900" height="180"></canvas>
@@ -112,6 +142,10 @@ def render_page(notice=None, good=True):
     else:
         saxo_pill_cls, saxo_pill_text = "pill-ok", "Saxo: connected"
 
+    conn_pill_cls, conn_pill_text = CONNECTION_PILLS.get(
+        market_agent.connection_status(), ("pill-unknown", "xWeb: unknown"))
+    last_update_text = "Last update: " + _relative_time(entries[-1].get("receivedAt") if entries else None)
+
     rows = []
     for e in reversed(entries):
         status = e.get("Status")
@@ -140,6 +174,8 @@ def render_page(notice=None, good=True):
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
         saxo_pill_cls=saxo_pill_cls, saxo_pill_text=html.escape(saxo_pill_text),
         saxo_login_url=html.escape(market_agent.SAXO_LOGIN_URL),
+        conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
+        last_update_text=html.escape(last_update_text),
         rows="".join(rows), candles_json=candles_json)
 
 

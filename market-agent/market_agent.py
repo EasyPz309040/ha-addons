@@ -60,6 +60,28 @@ MAX_ENTRIES = 500
 
 _state_lock = threading.Lock()
 
+# One of "connecting" (initial, before the first hub.start() attempt
+# completes), "connected", "reconnecting" (signalrcore's own
+# with_automatic_reconnect is mid-retry - the SAME hub object may still
+# recover without this module rebuilding anything), or "disconnected"
+# (this connection is being torn down; _run_forever will rebuild a fresh
+# one after backoff). This is the honest thing the add-on can actually
+# know - it says nothing about whether xWeb's own loop is still ticking,
+# only whether the pipe to it is currently up.
+_connection_state = "connecting"
+_connection_lock = threading.Lock()
+
+
+def _set_connection_state(state):
+    global _connection_state
+    with _connection_lock:
+        _connection_state = state
+
+
+def connection_status():
+    with _connection_lock:
+        return _connection_state
+
 
 def _read_state():
     try:
@@ -210,6 +232,7 @@ def _connect_once():
     good. Returns when there's nothing more this connection can do -
     the caller is responsible for deciding whether/when to retry.
     """
+    _set_connection_state("connecting")
     closed = threading.Event()
     hub = (HubConnectionBuilder()
            .with_url(HUB_URL, options={"verify_ssl": False})
@@ -221,13 +244,24 @@ def _connect_once():
            })
            .build())
     hub.on("onData", _on_data)
-    # Fires on every (re)connect, not just the first - ensures the panel
-    # shows a value immediately rather than waiting up to
-    # MarketAgent:PollingIntervalMinutes for the next tick, both on
-    # startup and after any reconnect.
-    hub.on_open(lambda: hub.send("RequestLatest", [TOPIC]))
-    hub.on_close(lambda: closed.set())
+
+    def _on_open():
+        _set_connection_state("connected")
+        # Fires on every (re)connect, not just the first - ensures the
+        # panel shows a value immediately rather than waiting up to
+        # MarketAgent:PollingIntervalMinutes for the next tick, both on
+        # startup and after any reconnect.
+        hub.send("RequestLatest", [TOPIC])
+
+    def _on_close():
+        _set_connection_state("disconnected")
+        closed.set()
+
+    hub.on_open(_on_open)
+    hub.on_reconnect(lambda: _set_connection_state("reconnecting"))
+    hub.on_close(_on_close)
     if not hub.start():
+        _set_connection_state("disconnected")
         raise RuntimeError("hub.start() returned False")
     closed.wait()
 

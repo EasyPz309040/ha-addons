@@ -13,6 +13,18 @@ every 5 minutes, free — see xWeb's `CLAUDE.md`) shows up here as it
 happens. A dropped connection (xWeb pod restart, network blip) reconnects
 on its own.
 
+## Connection status
+
+A second pill shows whether the add-on's own connection to xWeb's
+SignalR hub is actually up right now — green "xWeb: connected", amber
+"xWeb: connecting…"/"xWeb: reconnecting…", or amber "xWeb: disconnected"
+if even the automatic reconnect has dropped and a fresh connection is
+being rebuilt. This says the pipe to xWeb is open, not that xWeb's own
+loop is still ticking on schedule — pair it with "Last update" (next to
+it) to judge that: if the connection pill is green but the last update
+was hours ago, that's more likely xWeb's own loop being idle (e.g.
+market closed) than a connectivity problem.
+
 ## Saxo login status
 
 A colored pill next to the symbol shows whether xWeb currently has a
