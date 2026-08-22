@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Small web UI for the Ansible control node, served through HA ingress.
+"""Small web UI for the Home Ops add-on: Ansible fleet control, plus a
+Market Agent panel (see market_agent.py). Served through HA ingress.
 
 Ingress means Home Assistant proxies this panel behind its own auth, so no
 port is exposed on the LAN and there is no separate login. All paths must be
@@ -17,8 +18,11 @@ import os
 import re
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import market_agent
 
 PORT = int(os.environ.get("INGRESS_PORT", "8099"))
 SHARE = Path("/share/ansible")
@@ -327,13 +331,118 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .75rem;
   max-height: 60vh; overflow: auto; }}
 </style></head><body>
 <h1>Ansible Cluster Control</h1>
-<div class="meta">Playbooks at commit {commit} &middot; <a href="./docs">Docs</a></div>
+<div class="meta">Playbooks at commit {commit} &middot; <a href="./docs">Docs</a>
+&middot; <a href="./market-agent">Market Agent</a></div>
 {banner}
 {preview_summary}
 {cards}
 <h2>Recent runs</h2>
 <ul>{logs}</ul>
 </body></html>"""
+
+
+MARKET_AGENT_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport"
+content="width=device-width,initial-scale=1"><title>Market Agent</title>
+<style>
+{font_face}
+:root {{ color-scheme: light dark; }}
+body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; padding: 16px; background: transparent; }}
+h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 1.6rem; margin: 0 0 4px; }}
+.meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
+.card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px; }}
+button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
+  border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12);
+  cursor: pointer; }}
+button:hover {{ background: rgba(127,127,127,.25); }}
+.banner {{ padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+  font-size: .85rem; border: 1px solid rgba(127,127,127,.35);
+  background: rgba(127,127,127,.08); }}
+.notice-ok {{ background: rgba(46,125,50,.14); }}
+.notice-bad {{ background: rgba(198,40,40,.14); }}
+h2 {{ font-size: .95rem; margin: 22px 0 8px; }}
+canvas {{ width: 100%; height: 180px; display: block; }}
+table {{ width: 100%; border-collapse: collapse; font-size: .82rem; }}
+th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,127,127,.18); }}
+.ok {{ color: #2e7d32; font-weight: 600; }}
+.bad {{ color: #c62828; font-weight: 600; }}
+.triggered {{ color: #b26a00; font-weight: 600; }}
+</style></head><body>
+<h1>Market Agent</h1>
+<div class="meta">{symbol} &middot; <a href="./">&larr; Ansible</a></div>
+{banner}
+<div class="card">
+<canvas id="chart" width="900" height="180"></canvas>
+</div>
+<form method="post" action="./market-agent/run">
+<button type="submit">Run real analysis now (billed Claude call)</button>
+</form>
+<h2>Recent ticks</h2>
+<table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th></tr>
+{rows}
+</table>
+<script>
+const candles = {candles_json};
+const c = document.getElementById('chart');
+if (candles.length > 1 && c.getContext) {{
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || 900, h = 180;
+  c.width = w * dpr; c.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  const vals = candles.map(k => (k.closeBid + k.closeAsk) / 2);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const pad = 8;
+  const x = i => pad + (i / (vals.length - 1)) * (w - pad * 2);
+  const y = v => max === min ? h / 2 : h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+  ctx.strokeStyle = '#4a90d9';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
+  ctx.stroke();
+}}
+</script>
+</body></html>"""
+
+
+def render_market_agent_page(font_face, symbol, notice=None, good=True):
+    entries = market_agent.history(limit=30)
+    banner = ""
+    if notice:
+        cls = "banner " + ("notice-ok" if good else "notice-bad")
+        banner = f"<div class='{cls}'>{html.escape(notice)}</div>"
+    elif not entries:
+        banner = "<div class='banner'>No ticks received yet - waiting on xWeb's first broadcast.</div>"
+
+    rows = []
+    for e in reversed(entries):
+        metrics = e.get("metrics") or {}
+        triggered = bool(metrics.get("triggered"))
+        reasons = ", ".join(metrics.get("reasons") or [])
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(e.get("receivedAt", 0)))
+        rows.append(
+            "<tr><td>{ts}</td><td class='{cls}'>{status}</td>"
+            "<td class='{tcls}'>{trig}</td><td>{reasons}</td></tr>".format(
+                ts=ts,
+                cls="ok" if e.get("status") == "Preview" else "bad",
+                status=html.escape(str(e.get("status", "?"))),
+                tcls="triggered" if triggered else "",
+                trig="yes" if triggered else "no",
+                reasons=html.escape(reasons)))
+    if not rows:
+        rows.append("<tr><td colspan='4'>No ticks yet.</td></tr>")
+
+    candles = (entries[-1].get("evalCandles") if entries else None) or []
+    candles_json = json.dumps([
+        {"closeBid": k.get("closeBid", 0), "closeAsk": k.get("closeAsk", 0)}
+        for k in candles])
+
+    return MARKET_AGENT_PAGE.format(
+        font_face=font_face, symbol=html.escape(symbol), banner=banner,
+        rows="".join(rows), candles_json=candles_json)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -392,9 +501,16 @@ class Handler(BaseHTTPRequestHandler):
                     "</style><p><a href='./'>&larr; back</a></p><pre>"
                     + html.escape(log_text(name)) + "</pre>")
             return self._send(body)
+        if p.endswith("/market-agent"):
+            return self._send(render_market_agent_page(FONT_FACE, market_agent.SYMBOL))
         return self._send(self.render())
 
     def do_POST(self):
+        p = self._path()
+        if p.endswith("/market-agent/run"):
+            ok, msg = market_agent.trigger_real_run()
+            return self._send(render_market_agent_page(
+                FONT_FACE, market_agent.SYMBOL, notice=msg, good=ok))
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode()
         playbook = ""
@@ -464,4 +580,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    market_agent.start_background_thread()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

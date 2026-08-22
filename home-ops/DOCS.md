@@ -1,9 +1,10 @@
-# EasyPz Ansible Control Node
+# EasyPz Home Ops
 
-Runs Ansible playbooks against a home fleet on a schedule. The playbooks
-themselves are **not** in this add-on — they're cloned from a separate
-private repository at container start, so editing one is a commit and a
-restart rather than an image rebuild.
+Two unrelated things behind one panel: Ansible playbooks against a home
+fleet on a schedule, and a live Market Agent view fed from xWeb. The
+playbooks themselves are **not** in this add-on — they're cloned from a
+separate private repository at container start, so editing one is a
+commit and a restart rather than an image rebuild.
 
 Home Assistant is deliberately the control node because it sits *outside*
 the k3s cluster it manages, so it can cordon, drain and reboot cluster
@@ -56,9 +57,11 @@ it found.
 
 ## Using it
 
-The add-on adds an **Ansible** entry to the Home Assistant sidebar (served
+The add-on adds a **Home Ops** entry to the Home Assistant sidebar (served
 through ingress, so it sits behind HA's own login and exposes no port on the
-LAN).
+LAN). The main page is the Ansible panel described below; the **Market
+Agent** link at the top goes to the other panel, documented in its own
+section further down.
 
 The panel lists every playbook found in the repo with a **Run** button, shows
 the commit they're currently at, and lists recent runs with their exit status.
@@ -176,6 +179,40 @@ The `-o wide`/`showmount` examples only make sense against pi1 (the control
 plane) — use `--limit pi1` or they'll fail loudly on every worker instead of
 just being skipped.
 
+## Market Agent
+
+A live view of xWeb's `MarketAgentBackgroundService` loop — a price chart,
+a table of recent ticks, and a button to trigger a real (billed) analysis
+on demand. Reachable via the **Market Agent** link at the top of the main
+panel.
+
+**How it stays live.** A background thread holds one persistent connection
+to xWeb's SignalR hub (`/streamHub`, topic `marketagent.preview`) open for
+the life of the container — no polling. Every tick xWeb's own loop
+produces (by default every 5 minutes, free — see xWeb's `CLAUDE.md`) shows
+up here as it happens. A dropped connection (xWeb pod restart, network
+blip) reconnects on its own.
+
+**Notifications.** When a tick's threshold condition flips from not-met to
+met, a push notification fires via `notify_service` (below) — once per
+transition, not repeated every tick while it stays true. If the **Run real
+analysis now** button hits a Saxo 401 (token not logged in), it also
+notifies, with a login link to `kumuruku.com/saxo/login` — deliberately
+the WAN hostname, so the link works even away from home. This currently
+only covers the manual button: a token expiring silently between clicks
+during the background loop's own routine ticks isn't detected or notified
+on yet.
+
+**History**: `/share/market-agent/log.jsonl`, bounded to the most recent
+500 ticks — separate from `/share/ansible/`, which is unrelated,
+Ansible-specific state.
+
+**Notifications need no secret or long-lived token** — this add-on has its
+own Supervisor, which proxies the Home Assistant API automatically
+(`homeassistant_api: true` in `config.yaml`). Just set `notify_service`
+below to the exact service name (HA Developer Tools → **Actions** → search
+`notify`) and pushes start working.
+
 ## Options
 
 | Option | Default | Purpose |
@@ -189,6 +226,9 @@ just being skipped.
 | `backup_enabled` | `true` | Whether to schedule backups at all |
 | `sync_before_run` | `true` | Pull the latest playbooks before every run |
 | `run_on_start` | `false` | Run the update playbook immediately on start |
+| `xweb_host` | `192.168.0.201` | LAN address of xWeb's `xweb-lan` Service |
+| `market_agent_symbol` | `XAGUSD` | Symbol the Market Agent panel tracks |
+| `notify_service` | *(empty)* | HA notify service name for Market Agent pushes — pushes are silently skipped until this is set |
 
 ## Running on demand
 

@@ -1,8 +1,8 @@
-name: "EasyPz Ansible Control Node"
-version: "1.0.2"
-slug: "ansible-control"
-description: "Ansible control node for the home fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
-url: "https://github.com/EasyPz309040/ha-addons/tree/main/ansible-control"
+name: "EasyPz Home Ops"
+version: "2.0.0"
+slug: "home-ops"
+description: "Home fleet control panel: scheduled Ansible OS updates and k3s backups (playbooks pulled from a private git repo), plus a live Market Agent view fed from xWeb."
+url: "https://github.com/EasyPz309040/ha-addons/tree/main/home-ops"
 arch:
   - amd64
   - aarch64
@@ -10,9 +10,10 @@ startup: application
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:rocket-launch-outline
-panel_title: Ansible
+panel_title: Home Ops
 boot: auto
 init: false
+homeassistant_api: true
 map:
   - share:rw
 options:
@@ -25,6 +26,9 @@ options:
   backup_enabled: true
   sync_before_run: true
   run_on_start: false
+  xweb_host: "192.168.0.201"
+  market_agent_symbol: "XAGUSD"
+  notify_service: ""
 schema:
   playbook_repo: str
   playbook_branch: str
@@ -35,3 +39,6 @@ schema:
   backup_enabled: bool
   sync_before_run: bool
   run_on_start: bool
+  xweb_host: str
+  market_agent_symbol: str
+  notify_service: str

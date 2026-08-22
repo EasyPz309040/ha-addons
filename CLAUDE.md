@@ -10,12 +10,19 @@ the docs. Keys live on the HAOS box at `/share/ansible/.ssh/`.
 
 ## Release mechanics
 
-- `version:` in `ansible-control/config.yaml` **must be bumped** or the
+- `version:` in `home-ops/config.yaml` **must be bumped** or the
   Supervisor offers no update. That's the only place it's typed — the
   Dockerfile's `io.hass.version` reads `ARG BUILD_VERSION`, which the
   Supervisor supplies automatically from `config.yaml` at build time.
 - `slug:` must **not** change — it's the container name and the ingress path.
-  Changing it makes HA treat this as a different add-on and loses the install.
+  Changing it makes HA treat this as a different add-on and loses the
+  install (config values reset, needs uninstall/reinstall). This rule was
+  deliberately broken once, on purpose, 2026-08-22: `ansible-control` →
+  `home-ops`, when the add-on grew a second, unrelated concern (the
+  Market Agent panel) and a name specific to Ansible stopped fitting. That
+  was a one-time, accepted-disruption rename, not a repeal of the rule —
+  don't change `slug:` again without the same trade-off being a deliberate
+  choice.
 - `.gitattributes` forces LF. A CRLF shell script dies on Linux with
   `bad interpreter`.
 

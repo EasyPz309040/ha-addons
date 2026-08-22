@@ -13,7 +13,7 @@ https://github.com/EasyPz309040/ha-addons
 
 | Add-on | What it does |
 |---|---|
-| [EasyPz Ansible Control Node](ansible-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo before every run. |
+| [EasyPz Home Ops](home-ops/) | Runs Ansible playbooks against a home fleet on a schedule (playbooks pulled from a separate private repo before every run), plus a live Market Agent panel fed from xWeb. |
 
 ## Why this repo is public and separate
 

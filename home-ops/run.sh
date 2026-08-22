@@ -6,7 +6,7 @@ SSH_DIR="${SHARE_DIR}/.ssh"
 FLEET_KEY="${SSH_DIR}/id_ansible"
 DEPLOY_KEY="${SSH_DIR}/id_deploy"
 
-bashio::log.info "Ansible control node starting."
+bashio::log.info "Home Ops starting."
 
 mkdir -p "${SHARE_DIR}/logs" "${SHARE_DIR}/backups" "${SSH_DIR}"
 
@@ -79,7 +79,16 @@ if bashio::config.true 'run_on_start'; then
 fi
 
 bashio::log.info "Starting web UI on ingress port 8099."
-INGRESS_PORT=8099 python3 /usr/bin/ui.py &
+# XWEB_HOST/MARKET_AGENT_SYMBOL/NOTIFY_SERVICE feed market_agent.py's
+# background subscriber - it's spawned in-process by ui.py's __main__,
+# not as a separate script here, so it just inherits this shell's
+# environment. SUPERVISOR_TOKEN needs no export: the Supervisor already
+# injects it into every add-on's environment automatically.
+INGRESS_PORT=8099 \
+XWEB_HOST="$(bashio::config 'xweb_host')" \
+MARKET_AGENT_SYMBOL="$(bashio::config 'market_agent_symbol')" \
+NOTIFY_SERVICE="$(bashio::config 'notify_service')" \
+python3 /usr/bin/ui.py &
 
 bashio::log.info "Starting cron."
 exec crond -f -d 8
