@@ -38,8 +38,14 @@ from signalrcore.hub_connection_builder import HubConnectionBuilder
 
 log = logging.getLogger("market_agent")
 
-XWEB_HOST = os.environ.get("XWEB_HOST", "192.168.0.201")
-SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "XAGUSD")
+# .strip() or default, not just .get()'s default - os.environ.get() only
+# falls back when the var is absent, not when it's present-but-blank. A
+# blank workflow_service_host config value (e.g. from the xweb_host ->
+# workflow_service_host rename not being re-entered after updating)
+# would otherwise silently produce a malformed "http:///saxo/login" -
+# real failure mode, not hypothetical, caught after a user report.
+XWEB_HOST = os.environ.get("XWEB_HOST", "").strip() or "192.168.0.201"
+SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "").strip() or "XAGUSD"
 NOTIFY_SERVICE = os.environ.get("NOTIFY_SERVICE", "").strip()
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
