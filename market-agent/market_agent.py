@@ -85,14 +85,14 @@ def connection_status():
 
 def _read_state():
     try:
-        return json.loads(STATEFILE.read_text())
+        return json.loads(STATEFILE.read_text(encoding="utf-8"))
     except Exception:
         return {"last_triggered": False, "last_saxo_auth_required": False}
 
 
 def _write_state(state):
     SHARE.mkdir(parents=True, exist_ok=True)
-    STATEFILE.write_text(json.dumps(state))
+    STATEFILE.write_text(json.dumps(state), encoding="utf-8")
 
 
 def notify(title, message):
@@ -122,19 +122,19 @@ def _append(entry):
     lines = []
     if LOGFILE.exists():
         try:
-            lines = LOGFILE.read_text().splitlines()
+            lines = LOGFILE.read_text(encoding="utf-8").splitlines()
         except OSError:
             lines = []
     lines.append(json.dumps(entry))
     lines = lines[-MAX_ENTRIES:]
-    LOGFILE.write_text("\n".join(lines) + "\n")
+    LOGFILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def history(limit=100):
     if not LOGFILE.exists():
         return []
     try:
-        lines = LOGFILE.read_text().splitlines()
+        lines = LOGFILE.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     out = []
