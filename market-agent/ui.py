@@ -109,6 +109,36 @@ def _fmt_signed(v, fmt):
     return f"+{v:{fmt}}" if v >= 0 else f"{v:{fmt}}"
 
 
+def _reason_status(name, metrics):
+    """Whether a named trigger condition actually fired, straight from
+    Reasons - not re-derived from the raw numbers, since Reasons is the
+    Workflow Service's own authoritative answer and re-deriving it here
+    risks a rounding/edge-case mismatch. FirstRun is a special case: the
+    threshold comparisons are skipped entirely that check (no baseline to
+    compare against yet), not just "not exceeded" - worth saying so
+    rather than implying a comparison happened when it didn't.
+    """
+    reasons = metrics.get("Reasons") or []
+    if "FirstRun" in reasons:
+        return "not evaluated this check (first check / no baseline yet)"
+    return "exceeded — contributed to triggering" if name in reasons else "not exceeded"
+
+
+def _threshold_note(label, measured, threshold, reason_name, metrics):
+    """One <p class='note'> line: measured value, configured threshold (if
+    the Workflow Service has reported it yet - defensive, same pattern as
+    PublicLoginUrl/token usage: works today without it, upgrades itself
+    the moment it starts arriving), the gap between them, and whether it
+    actually fired.
+    """
+    if threshold is None:
+        return (f"<p class='note'>Measured: {_fmt_pct(measured)}. Threshold not reported yet "
+                f"by the Workflow Service.</p>")
+    gap = (measured - threshold) if isinstance(measured, (int, float)) else None
+    return (f"<p class='note'>Measured: {_fmt_pct(measured)} · Threshold: {_fmt_pct(threshold)} "
+            f"({_fmt_signed(gap, '.2f')}pp) · {_reason_status(reason_name, metrics)}.</p>")
+
+
 def _render_trigger_detail(entry):
     """Price move and Volatility are computed *within this window itself*
     (first candle vs last, and the window's own high-low range) against a
@@ -116,9 +146,9 @@ def _render_trigger_detail(entry):
     natural that assumption is. Only Volume actually compares against the
     baseline (this window's average vs. the baseline average x a
     multiplier) - confirmed directly against MarketTriggerAnalysis.Evaluate
-    in xCalc/Model.Core, not assumed. Built as three clearly separate
-    sections instead of one flat table so this distinction is visible
-    rather than implied.
+    in Model.Core, not assumed. Built as three clearly separate sections
+    instead of one flat table so this distinction is visible rather than
+    implied.
     """
     metrics = entry.get("Metrics") or {}
     candles = entry.get("EvalCandles") or []
@@ -153,33 +183,41 @@ def _render_trigger_detail(entry):
             "</table>")
     else:
         parts.append("<p class='note'>No candle data on this check to compute a window.</p>")
-    parts.append(
-        f"<p class='note'>Measured: {_fmt_pct(metrics.get('PriceMovePercent'))} move from this "
-        "window's first candle to its last - compared against a fixed threshold, not the baseline below.</p>")
+    parts.append(_threshold_note(
+        "Price move", metrics.get("PriceMovePercent"), metrics.get("PriceMoveThresholdPercent"),
+        "PriceMove", metrics))
 
     # --- Volatility: also window-internal, no baseline comparison exists ---
     parts.append("<h3>Volatility</h3>")
-    parts.append(
-        f"<p>This window's average high–low range: <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>"
-        "<p class='note'>Also compared against a fixed threshold, not the baseline - there's no "
-        "baseline volatility comparison in the trigger logic itself.</p>")
+    parts.append(f"<p>This window's average high–low range: <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>")
+    parts.append(_threshold_note(
+        "Volatility", metrics.get("AvgVolatilityPercent"), metrics.get("VolatilityThresholdPercent"),
+        "Volatility", metrics))
 
     # --- Volume: the one measure that's genuinely baseline vs current ---
     parts.append("<h3>Volume</h3>")
     avg_vol, base_vol = metrics.get("AvgVolume"), metrics.get("BaselineAvgVolume")
+    multiplier = metrics.get("VolumeMultiplier")
     if avg_vol is not None or base_vol is not None:
         pct = ((avg_vol - base_vol) / base_vol * 100) if (
             isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float)) and base_vol) else None
         diff = (avg_vol - base_vol) if (isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float))) else None
-        parts.append(
+        trigger_point = (base_vol * multiplier) if (
+            isinstance(base_vol, (int, float)) and isinstance(multiplier, (int, float))) else None
+        rows = (
             "<table class='compare'><tr><th></th><th class='num'>Avg volume</th></tr>"
-            f"<tr><td>Baseline</td><td class='num'>{_fmt_num(base_vol)}</td></tr>"
+            f"<tr><td>Baseline</td><td class='num'>{_fmt_num(base_vol)}</td></tr>")
+        if trigger_point is not None:
+            rows += f"<tr><td>Triggers above ({multiplier:g}×)</td><td class='num'>{_fmt_num(trigger_point)}</td></tr>"
+        rows += (
             f"<tr><td>This window</td><td class='num'>{_fmt_num(avg_vol)}</td></tr>"
-            f"<tr><td>Change</td><td class='num'>{_fmt_signed(diff, ',.0f')} "
+            f"<tr><td>Change vs. baseline</td><td class='num'>{_fmt_signed(diff, ',.0f')} "
             f"({_fmt_signed(pct, '.1f')}%)</td></tr>"
-            "</table>"
-            "<p class='note'>This one genuinely does compare against the baseline - "
-            "triggers when this window's average exceeds the baseline average x a configured multiplier.</p>")
+            "</table>")
+        parts.append(rows)
+        multiplier_text = f"a {multiplier:g}× multiplier" if multiplier is not None else "a configured multiplier not yet reported"
+        parts.append(f"<p class='note'>Triggers when this window's average exceeds the baseline average x "
+                      f"{multiplier_text} · {_reason_status('Volume', metrics)}.</p>")
     else:
         parts.append("<p class='note'>No volume data for this instrument.</p>")
 

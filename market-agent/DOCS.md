@@ -104,6 +104,15 @@ reference only. A blank baseline means either this is genuinely the
 first check ever, or the Workflow Service restarted since the last one
 — its state has no persistent volume, so a redeploy resets it.
 
+Each section also shows **measured vs. threshold** and whether that
+condition actually contributed to triggering (straight from the
+Workflow Service's own `Reasons`, not re-derived here). On the very
+first check for a symbol there's no baseline yet, so none of the three
+comparisons run at all that check — shown as "not evaluated", not as a
+false "not exceeded". Older log entries recorded before the Workflow
+Service started reporting its thresholds show "Threshold not reported
+yet" instead of a number — the measured value is still shown either way.
+
 Cost is estimated locally from a small rate table keyed by model name,
 not fetched from Anthropic — there's no API for querying actual account
 balance or cost. An unrecognized model shows "unknown" rather than a
