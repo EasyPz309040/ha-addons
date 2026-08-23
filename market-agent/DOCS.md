@@ -33,6 +33,18 @@ Service's own loop produces (by default every 5 minutes, free) shows up
 here as it happens. A dropped connection (a Workflow Service restart,
 network blip) reconnects on its own.
 
+A second, independent watchdog thread catches the case where the
+connection doesn't cleanly drop but goes quietly deaf instead — the
+underlying socket stays open, the pill still says "connected", but no
+further check ever arrives (observed for real when the Workflow Service
+itself was redeployed out from under an already-open connection). If a
+full minute passes with the pill saying "connected" but no new check in
+the last 25 — a generous multiple of the normal 5-minute cadence — the
+watchdog force-closes the connection itself, which hands it straight
+back to the same reconnect logic a real network failure would trigger.
+Nothing to configure; this runs automatically alongside the main
+connection.
+
 ## Connection status
 
 A second pill shows whether the add-on's own connection to the Workflow

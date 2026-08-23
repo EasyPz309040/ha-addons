@@ -121,6 +121,26 @@ def connection_status():
         return _connection_state
 
 
+# Watchdog state - see _watchdog_loop below. Separate lock from
+# _connection_lock/_state_lock: this is written from _on_data (the hub's
+# receive thread) and read from the watchdog thread, an unrelated pair to
+# either of those.
+_last_data_at = None
+_last_data_at_lock = threading.Lock()
+
+_current_hub = None
+_current_hub_lock = threading.Lock()
+
+# Generous multiple of the default 5-minute poll interval - long enough
+# that a couple of slow/retried polls never false-trigger a reconnect,
+# short enough to self-heal well within a session. Deliberately not
+# market-hours-aware (no special-casing MarketClosed's own multi-hour
+# gaps): a spurious reconnect during a real closed-market silence is
+# cheap and harmless - it just re-requests the same cached tick - so the
+# extra complexity of parsing NextRetryAfter here isn't worth it.
+STALE_AFTER_SECONDS = 25 * 60
+
+
 def _read_state():
     try:
         return json.loads(STATEFILE.read_text(encoding="utf-8"))
@@ -215,6 +235,10 @@ def _on_data(args):
     entry = dict(result)
     entry["receivedAt"] = time.time()
     _append(entry)
+
+    global _last_data_at
+    with _last_data_at_lock:
+        _last_data_at = entry["receivedAt"]
 
     # PascalCase throughout - MarketWorkflowResult/TriggerMetrics have no
     # [JsonProperty] overrides, so JsonConvert.SerializeObject emits keys
@@ -360,7 +384,16 @@ def _connect_once():
     if not hub.start():
         _set_connection_state("disconnected")
         raise RuntimeError("hub.start() returned False")
-    closed.wait()
+
+    global _current_hub
+    with _current_hub_lock:
+        _current_hub = hub
+    try:
+        closed.wait()
+    finally:
+        with _current_hub_lock:
+            if _current_hub is hub:
+                _current_hub = None
 
 
 def _run_forever():
@@ -375,7 +408,51 @@ def _run_forever():
         backoff = min(backoff * 2, 300)
 
 
+def _watchdog_loop():
+    """Catches a connection that LOOKS alive but has gone deaf.
+
+    Observed for real 2026-08-23: a client's connection survived the
+    *backend* pod it was talking to being replaced (an xWeb redeploy)
+    without erroring or reconnecting on its own - TCP stayed established,
+    connection_status() kept saying "connected", but no further broadcast
+    ever arrived. signalrcore's own keep_alive_interval didn't catch it -
+    a ping that's written successfully to a half-dead socket doesn't
+    prove the far end is still listening, and evidently nothing here was
+    checking for a pong. Deliberately dumb: it only asks "has real data
+    arrived recently enough", not "why not" - and force-closes the
+    current hub if the answer is no, letting _run_forever's existing
+    backoff/reconnect loop rebuild it exactly as if it had failed on its
+    own. hub.stop() is a documented-safe cross-thread call (it just closes
+    the underlying websocket-client socket, same effect a real network
+    failure would have).
+    """
+    while True:
+        time.sleep(60)
+        _watchdog_check()
+
+
+def _watchdog_check():
+    if connection_status() != "connected":
+        return  # already reconnecting/disconnected - _run_forever already owns this
+    with _last_data_at_lock:
+        last = _last_data_at
+    if last is None:
+        return  # nothing received on this connection yet - too early to judge
+    idle = time.time() - last
+    if idle <= STALE_AFTER_SECONDS:
+        return
+    log.warning("market agent connection looks stale (%.0fs since last tick) - forcing reconnect", idle)
+    with _current_hub_lock:
+        hub = _current_hub
+    if hub is not None:
+        try:
+            hub.stop()
+        except Exception as e:
+            log.warning("stale-connection stop() failed: %s", e)
+
+
 def start_background_thread():
     t = threading.Thread(target=_run_forever, name="market-agent-hub", daemon=True)
     t.start()
+    threading.Thread(target=_watchdog_loop, name="market-agent-watchdog", daemon=True).start()
     return t
