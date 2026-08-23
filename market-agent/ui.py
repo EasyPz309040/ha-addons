@@ -106,8 +106,19 @@ def _fmt_num(v):
 
 
 def _fmt_candle_time(s):
+    """HH:MM for a candle from today (UTC); prefixes the date otherwise -
+    without this, stale candles (e.g. Friday's last session, still shown
+    through a closed weekend because Saxo has nothing newer to return)
+    read as if they were today's live price action. Confirmed for real
+    2026-08-23: EvalCandles was still 2026-08-21 17:00-20:55 on a Sunday,
+    with no date shown anywhere, looking exactly like fresh data.
+    """
     dt = _parse_dotnet_dt(s)
-    return dt.strftime("%H:%M") if dt else ""
+    if not dt:
+        return ""
+    if dt.date() == datetime.now(timezone.utc).date():
+        return dt.strftime("%H:%M")
+    return dt.strftime("%b %d, %H:%M")
 
 
 def _fmt_dt(s):
@@ -318,6 +329,33 @@ def _candles_payload(entry):
     baseline_price = (entry.get("Metrics") or {}).get("BaselinePrice")
     baseline_price_json = json.dumps(baseline_price) if isinstance(baseline_price, (int, float)) else "null"
     return candles, candles_json, baseline_price_json
+
+
+def _chart_caption(entry, symbol):
+    """One caption, shared by the main page and Workflow detail, so a
+    stale/closed-market chart never gets a different (accidentally more
+    honest, or less) caption depending on which page you're looking at.
+    Symbol is escaped here since it's the one piece that's user-config,
+    not broadcast data - everything else is either static text or a
+    safely-formatted timestamp, so the caller must NOT re-escape this
+    result (it already contains real HTML: a <strong> around the
+    stale-data clause, not just plain text).
+    """
+    candles = entry.get("EvalCandles") or []
+    if len(candles) < 2:
+        return "No candle data on this check."
+    start_dt = _parse_dotnet_dt(candles[0].get("Time"))
+    end_dt = _parse_dotnet_dt(candles[-1].get("Time"))
+    start, end = _fmt_candle_time(candles[0].get("Time")), _fmt_candle_time(candles[-1].get("Time"))
+    baseline_price = (entry.get("Metrics") or {}).get("BaselinePrice")
+
+    parts = [f"{html.escape(symbol)} mid price (bid/ask average) — "
+             f"last {len(candles)} candles, {html.escape(start)}–{html.escape(end)}"]
+    if baseline_price is not None:
+        parts.append("amber dashed line is the trigger baseline")
+    if end_dt is not None and end_dt.date() != datetime.now(timezone.utc).date():
+        parts.append("<strong>no newer candles from Saxo since then — market is likely closed</strong>")
+    return " · ".join(parts)
 
 
 # Shared by both PAGE and TICK_PAGE - plain JS, not run through .format()
@@ -601,12 +639,15 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .8rem;
 
 
 def _render_chart_block(entry, caption):
+    """`caption` is already-safe HTML from _chart_caption() - not
+    re-escaped here, same reasoning as PAGE's own chart_caption slot.
+    """
     candles, candles_json, baseline_price_json = _candles_payload(entry)
     if len(candles) < 2:
-        return f"<p>{html.escape(caption)}</p>"
+        return f"<p>{caption}</p>"
     return (
         "<div class=\"card\"><canvas id=\"chart\"></canvas></div>"
-        f"<p style=\"font-size:.8rem;opacity:.65;margin-top:-6px\">{html.escape(caption)}</p>"
+        f"<p style=\"font-size:.8rem;opacity:.65;margin-top:-6px\">{caption}</p>"
         f"<script>{CHART_JS_FN}\ndrawMarketChart('chart', {candles_json}, {baseline_price_json});</script>"
     )
 
@@ -697,15 +738,7 @@ def render_page(notice=None, good=True):
 
     latest_entry = entries[-1] if entries else {}
     candles, candles_json, baseline_price_json = _candles_payload(latest_entry)
-    baseline_price = (latest_entry.get("Metrics") or {}).get("BaselinePrice")
-
-    if len(candles) > 1:
-        start, end = _fmt_candle_time(candles[0].get("Time")), _fmt_candle_time(candles[-1].get("Time"))
-        chart_caption = (f"{market_agent.SYMBOL} mid price (bid/ask average) — "
-                          f"last {len(candles)} candles, {start}–{end}"
-                          + (" · amber dashed line is the trigger baseline" if baseline_price is not None else ""))
-    else:
-        chart_caption = "No candle data in the latest check yet."
+    chart_caption = _chart_caption(latest_entry, market_agent.SYMBOL)
 
     if entries:
         last_check_when = time.strftime("%H:%M", time.localtime(latest_entry.get("receivedAt", 0)))
@@ -725,7 +758,7 @@ def render_page(notice=None, good=True):
         conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
         last_update_text=html.escape(last_update_text),
         next_check_text=html.escape(next_check_text),
-        chart_caption=html.escape(chart_caption),
+        chart_caption=chart_caption,
         last_check_block=last_check_block,
         ai_result_block=ai_result_block,
         baseline_price_json=baseline_price_json,
@@ -780,10 +813,7 @@ def render_tick_page(ts):
     else:
         signal_block = ""
 
-    candles, candles_json, baseline_price_json = _candles_payload(entry)
-    caption = (f"{len(candles)} candles for this check" if len(candles) > 1
-               else "No candle data on this check.")
-    chart_block = _render_chart_block(entry, caption)
+    chart_block = _render_chart_block(entry, _chart_caption(entry, market_agent.SYMBOL))
     trigger_detail = _render_trigger_detail(entry)
 
     return TICK_PAGE.format(

@@ -14,7 +14,12 @@ The panel is three cards, top to bottom:
    just happened rather than one you clicked into. The chart's time axis
    labels are the candles' own timestamps (real price data time, from
    Saxo), not when the add-on happened to receive the check that carried
-   them.
+   them. When the market's closed, Saxo has nothing newer to hand back,
+   so the chart keeps showing the last real session's candles rather than
+   going blank — the caption below the chart adds the date (not just the
+   time) and a bold "market is likely closed" note whenever those candles
+   aren't from today, so stale data is never mistaken for live price
+   action.
 2. **AI Analysis** — the **Run AI Analysis** button (a real, billed Claude
    call, on demand) and, underneath it, the most recent *billed* run's
    question and answer — this shows up here automatically the moment one
