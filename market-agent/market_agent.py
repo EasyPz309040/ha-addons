@@ -368,10 +368,24 @@ def _connect_once():
 
     def _on_open():
         _set_connection_state("connected")
-        # Fires on every (re)connect, not just the first - ensures the
-        # panel shows a value immediately rather than waiting up to
-        # MarketAgent:PollingIntervalMinutes for the next tick, both on
-        # startup and after any reconnect.
+        # Subscribe is what actually adds this connection to the
+        # server-side SignalR group MarketAgentBackgroundService
+        # broadcasts to (Groups.AddToGroupAsync in StreamHub.Subscribe) -
+        # without it, Clients.Group(Topic).SendAsync(...) never reaches
+        # this connection at all, no matter how long it stays open. This
+        # was missing here from the start: every tick this add-on has
+        # ever shown came from the one-shot RequestLatest snapshot below,
+        # taken at connect/reconnect time - never a live push - which is
+        # why history gaps didn't track the 5-minute poll interval at all
+        # (found 2026-08-23 while investigating a reported Saxo-login
+        # status lag). Must be sent on every (re)connect, not just the
+        # first, since group membership doesn't survive a reconnect
+        # either.
+        hub.send("Subscribe", [TOPIC])
+        # RequestLatest still matters even with a real subscription: it's
+        # what makes the panel show a value immediately on connect rather
+        # than waiting up to MarketAgent:PollingIntervalMinutes for the
+        # next tick.
         hub.send("RequestLatest", [TOPIC])
 
     def _on_close():
