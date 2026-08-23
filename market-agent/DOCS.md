@@ -113,11 +113,13 @@ exposes it.
 
 **Three measure cards up top (Price move / Volatility / Volume), side by
 side** — each shows the measured value, its configured threshold, and
-whether it actually exceeded it this check (straight from the Workflow
-Service's own `Reasons`, not re-derived here). "Exceeded" only means this
-measure is one reason **Delta threshold met** is "yes" for this check —
-it does not mean a Claude call happened. Every background-loop check is
-a free preview, never billed (its "Status" is never `Completed` on its
+whether it's currently **over threshold** or **under threshold** (straight
+from the Workflow Service's own `Reasons`, not re-derived here — the same
+consistent pair for all three measures, including Volume, whose "threshold"
+is really the baseline times a configured multiplier). Being over threshold
+only means this measure is one reason **Delta threshold met** is "yes" for
+this check — it does not mean a Claude call happened. Every background-loop
+check is a free preview, never billed (its "Status" is never `Completed` on its
 own); Delta threshold met: yes just says a real analysis *would be worth
 running*. Only the **Run AI Analysis** button actually bills one. Below
 the cards, a fuller breakdown for Price move and Volume: Price move and
@@ -136,7 +138,7 @@ redeploy resets it.
 
 On the very first check for a symbol there's no baseline yet, so none of
 the three comparisons run at all that check — the cards say "not
-evaluated", not a false "not exceeded". Older log entries recorded
+evaluated", not a false "under threshold". Older log entries recorded
 before the Workflow Service started reporting its thresholds show
 "threshold not reported yet" instead of a number — the measured value is
 still shown either way.

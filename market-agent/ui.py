@@ -131,13 +131,16 @@ def _reason_status(name, metrics):
     Reasons is the Workflow Service's own authoritative answer and
     re-deriving it here risks a rounding/edge-case mismatch. FirstRun is a
     special case: the threshold comparisons are skipped entirely that
-    check (no baseline to compare against yet), not just "not exceeded" -
-    worth saying so rather than implying a comparison happened when it
+    check (no baseline to compare against yet), not just "under threshold"
+    - worth saying so rather than implying a comparison happened when it
     didn't.
 
-    Deliberately says "exceeded", never "triggered" - a crossed threshold
-    here just means this measure is one reason Delta threshold met is
-    "yes" for this check, not that any Claude call happened. Every
+    Deliberately says "over threshold"/"under threshold" - a consistent,
+    self-contained pair reused as-is for all three measures (Price move/
+    Volatility's fixed percent thresholds and Volume's baseline x
+    multiplier trigger point alike) - never "triggered". Being over
+    threshold here just means this measure is one reason Delta threshold
+    met is "yes" for this check, not that any Claude call happened. Every
     background-loop check is a free preview, never billed - only the Run
     AI Analysis button actually calls Claude, so a routine check with
     Delta threshold met: yes has still triggered nothing on its own.
@@ -145,7 +148,7 @@ def _reason_status(name, metrics):
     reasons = metrics.get("Reasons") or []
     if "FirstRun" in reasons:
         return "not evaluated this check (first check / no baseline yet)"
-    return "exceeded" if name in reasons else "not exceeded"
+    return "over threshold" if name in reasons else "under threshold"
 
 
 def _measure_card(label, value_text, sub_text, extra_cls=""):
@@ -157,7 +160,7 @@ def _measure_card(label, value_text, sub_text, extra_cls=""):
 
 def _measure_status_cls(name, metrics):
     status = _reason_status(name, metrics)
-    if status.startswith("exceeded"):
+    if status.startswith("over"):
         return "hit"
     if status.startswith("not evaluated"):
         return "unknown"
@@ -176,7 +179,7 @@ def _render_measure_cards(entry):
     def pct_sub(measured, threshold, name):
         if threshold is None:
             return "threshold not reported yet"
-        return f"of {_fmt_pct(threshold)} threshold · {_reason_status(name, metrics)}"
+        return f"of {_fmt_pct(threshold)} · {_reason_status(name, metrics)}"
 
     price_card = _measure_card(
         "Price move", _fmt_pct(metrics.get("PriceMovePercent")),
@@ -191,8 +194,8 @@ def _render_measure_cards(entry):
     base_vol = metrics.get("BaselineAvgVolume")
     multiplier = metrics.get("VolumeMultiplier")
     if isinstance(base_vol, (int, float)) and isinstance(multiplier, (int, float)):
-        volume_sub = (f"of {_fmt_num(base_vol * multiplier)} trigger point "
-                       f"({multiplier:g}×) · {_reason_status('Volume', metrics)}")
+        volume_sub = (f"of {_fmt_num(base_vol * multiplier)} ({multiplier:g}× baseline) "
+                       f"· {_reason_status('Volume', metrics)}")
     elif isinstance(base_vol, (int, float)):
         volume_sub = f"baseline {_fmt_num(base_vol)} · multiplier not reported yet"
     else:
