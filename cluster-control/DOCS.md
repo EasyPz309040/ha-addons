@@ -149,6 +149,15 @@ effect as running `flux reconcile kustomization workloads -n flux-system
 in the fleet (it never has been). The Run button works here — no variables
 needed.
 
+**`redeploy-xweb.yml`** — xWeb's image tag is a floating `:latest`, not
+pinned, so a new CI build sitting on GHCR is invisible to Flux (or to
+the button above) until something forces a re-pull. **When to use:**
+click it after an xWeb change has merged and you want it live — but CI
+(multi-arch build) can take several minutes, so if the log says the
+image digest didn't change, that means CI hasn't finished publishing
+yet, not that anything's broken; just try again shortly. The Run button
+works here too — no variables needed.
+
 ### `run-command.yml` cookbook
 
 Every command below is complete and ready to paste — set `CONTAINER` once

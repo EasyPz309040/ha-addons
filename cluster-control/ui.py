@@ -142,6 +142,14 @@ DESCRIPTIONS = {
         "as `flux reconcile kustomization workloads --with-source`, without "
         "needing the flux CLI anywhere in the fleet."
     ),
+    "redeploy-xweb.yml": (
+        "xWeb's image tag is a floating :latest, not pinned — a new CI "
+        "build sitting on GHCR is invisible to Flux (or this button's own "
+        "flux-reconcile) until something forces a re-pull. This does that: "
+        "restarts the xweb Deployment and reports whether the image digest "
+        "actually changed, so you can tell a real deploy from CI not "
+        "having finished building yet."
+    ),
 }
 
 _lock = threading.Lock()
