@@ -45,14 +45,35 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 TOPIC = "marketagent.preview"
 HUB_URL = f"http://{XWEB_HOST}/streamHub"
-# No domain name belongs in this repo's source - it's public. Defaults to
-# XWEB_HOST (LAN-only, but zero configuration needed). A user who wants
-# this link to survive being tapped from a notification away from home
-# can set saxo_login_url in the add-on's own config to their own WAN
-# hostname - that value lives in their Supervisor's stored config, never
-# in git, so it never puts a domain in the repo.
+# Fallback chain, used only until the Workflow Service's own broadcast
+# carries a PublicLoginUrl (see _public_login_url below - that's the
+# preferred source once it's actually arriving). No domain name belongs
+# in this repo's source - it's public. Defaults to XWEB_HOST (LAN-only,
+# but zero configuration needed). A user who wants this link to survive
+# being tapped from a notification away from home, before the Workflow
+# Service side of this is live, can set saxo_login_url in the add-on's
+# own config to their own WAN hostname - that value lives in their
+# Supervisor's stored config, never in git, so it never puts a domain in
+# the repo either way.
 _SAXO_LOGIN_URL_OVERRIDE = os.environ.get("SAXO_LOGIN_URL", "").strip()
-SAXO_LOGIN_URL = _SAXO_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
+_SAXO_LOGIN_URL_FALLBACK = _SAXO_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
+
+_public_login_url = None  # latest PublicLoginUrl seen on a broadcast, if any
+_public_login_url_lock = threading.Lock()
+
+
+def login_url():
+    """The best currently-known Saxo login URL.
+
+    Prefers PublicLoginUrl straight from the Workflow Service's own
+    broadcast (it derives this from its own already-configured
+    Saxo:RedirectUri, so it's always right and needs no config here at
+    all) - falls back to _SAXO_LOGIN_URL_FALLBACK only if no tick has
+    carried one yet, e.g. before that field exists on the Workflow
+    Service side, or before the very first tick arrives.
+    """
+    with _public_login_url_lock:
+        return _public_login_url or _SAXO_LOGIN_URL_FALLBACK
 
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"
@@ -182,11 +203,17 @@ def _on_data(args):
     metrics = result.get("Metrics") or {}
     triggered = bool(metrics.get("Triggered"))
 
+    public_login_url = result.get("PublicLoginUrl")
+    if public_login_url:
+        global _public_login_url
+        with _public_login_url_lock:
+            _public_login_url = public_login_url
+
     with _state_lock:
         state = _read_state()
 
         if saxo_auth_required and not state.get("last_saxo_auth_required"):
-            notify("Market Agent", f"Saxo login required: {SAXO_LOGIN_URL}")
+            notify("Market Agent", f"Saxo login required: {login_url()}")
         elif state.get("last_saxo_auth_required") and not saxo_auth_required:
             notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
         state["last_saxo_auth_required"] = saxo_auth_required
@@ -265,8 +292,8 @@ def trigger_real_run():
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         if e.code == 401:
-            notify("Market Agent", f"Saxo login required: {SAXO_LOGIN_URL}")
-            return False, f"Saxo authentication required. Log in: {SAXO_LOGIN_URL}"
+            notify("Market Agent", f"Saxo login required: {login_url()}")
+            return False, f"Saxo authentication required. Log in: {login_url()}"
         return False, f"Workflow Service returned {e.code}: {body}"
     except Exception as e:
         return False, f"Could not reach the Workflow Service: {e}"
