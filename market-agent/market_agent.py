@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """Background subscriber + notifier for the Market Agent panel.
 
-Connects once to xWeb's SignalR hub (/streamHub) and stays connected,
-subscribed to topic "marketagent.preview" - each broadcast is one tick of
-MarketAgentBackgroundService's own loop (preview only, never a billed
-Claude call - see xWeb's CLAUDE.md). No polling: signalrcore holds one
-persistent connection open via with_automatic_reconnect(max_attempts=None),
-so a dropped connection (xWeb pod restart, network blip) recovers on its
-own. This module's own outer retry loop only exists to rebuild the
-connection from scratch if the very first `start()` call itself fails
-(xWeb unreachable at add-on boot) or if the transport eventually closes
-for good despite that setting.
+Connects once to the Workflow Service's SignalR hub (/streamHub) and stays
+connected, subscribed to topic "marketagent.preview" - each broadcast is
+one tick of MarketAgentBackgroundService's own loop (preview only, never a
+billed Claude call - see the Workflow Service's own CLAUDE.md). No
+polling: signalrcore holds one persistent connection open via
+with_automatic_reconnect(max_attempts=None), so a dropped connection (a
+Workflow Service pod restart, network blip) recovers on its own. This
+module's own outer retry loop only exists to rebuild the connection from
+scratch if the very first `start()` call itself fails (Workflow Service
+unreachable at add-on boot) or if the transport eventually closes for
+good despite that setting.
 
 Persists a bounded JSONL history to /share/market-agent/ - deliberately
 not /share/ansible/, which is namespaced for Ansible-specific state and
@@ -66,7 +67,7 @@ _state_lock = threading.Lock()
 # recover without this module rebuilding anything), or "disconnected"
 # (this connection is being torn down; _run_forever will rebuild a fresh
 # one after backoff). This is the honest thing the add-on can actually
-# know - it says nothing about whether xWeb's own loop is still ticking,
+# know - it says nothing about whether the Workflow Service's own loop is still ticking,
 # only whether the pipe to it is currently up.
 _connection_state = "connecting"
 _connection_lock = threading.Lock()
@@ -216,7 +217,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def resolve_saxo_login_redirect():
-    """Ask xWeb where /saxo/login would send a browser, without going there.
+    """Ask the Workflow Service where /saxo/login would send a browser,
+    without going there.
 
     Called from ui.py's own /saxo-login route (server-side, on HAOS - a
     normal LAN device, not a sandboxed browser) so the browser itself
@@ -225,12 +227,13 @@ def resolve_saxo_login_redirect():
     a public hostname) to a private-range IP is exactly what triggers
     Chrome's Local Network Access prompt - and even Allow wouldn't help,
     since the browser genuinely can't route to a LAN IP from outside the
-    LAN in the first place. Relaying xWeb's real Location (Saxo's public
+    LAN in the first place. Relaying the real Location (Saxo's public
     authorize URL) sidesteps both problems: the browser only ever talks
     to the add-on's own origin, then goes straight to Saxo.
 
-    Returns the Location header string, or None if xWeb didn't respond
-    with a redirect at all (unreachable, unexpected response, etc).
+    Returns the Location header string, or None if the Workflow Service
+    didn't respond with a redirect at all (unreachable, unexpected
+    response, etc).
     """
     opener = urllib.request.build_opener(_NoRedirect)
     try:
@@ -264,9 +267,9 @@ def trigger_real_run():
         if e.code == 401:
             notify("Market Agent", f"Saxo login required: {SAXO_LOGIN_URL}")
             return False, f"Saxo authentication required. Log in: {SAXO_LOGIN_URL}"
-        return False, f"xWeb returned {e.code}: {body}"
+        return False, f"Workflow Service returned {e.code}: {body}"
     except Exception as e:
-        return False, f"Could not reach xWeb: {e}"
+        return False, f"Could not reach the Workflow Service: {e}"
 
 
 def _connect_once():

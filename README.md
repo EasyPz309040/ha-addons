@@ -14,7 +14,7 @@ https://github.com/EasyPz309040/ha-addons
 | Add-on | What it does |
 |---|---|
 | [EasyPz Cluster Control](cluster-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo before every run. |
-| [EasyPz Market Agent](market-agent/) | Live view of xWeb's Market Agent loop — price chart, recent ticks, on-demand real analysis, push notifications on trigger. |
+| [EasyPz Market Agent](market-agent/) | Live view of the Workflow Service's Market Agent loop — price chart, recent ticks, on-demand real analysis, push notifications on trigger. |
 
 ## Why this repo is public and separate
 
@@ -31,9 +31,12 @@ The two add-ons keep this true in different ways:
   or the Supervisor's configuration.
 - **`market-agent`** — carries no separate content to protect in the first
   place. It's a thin client: a SignalR subscription and two HTTP calls
-  against xWeb's own already-deployed endpoints. The actual trading logic —
-  trigger thresholds, the Claude system prompt, the Claude API key — lives
-  in xWeb (a private repo) and is never duplicated or shipped here. The one
-  address this add-on hardcodes as a default (`xweb_host`, a private LAN IP)
-  is documented in its own `DOCS.md`, satisfying the "no host addresses
-  beyond what's already in the docs" rule below.
+  against the Workflow Service's own already-deployed endpoints (a private
+  repo, referred to only generically here and in the add-on itself — the
+  actual solution name isn't something a user of this add-on needs to
+  know). The actual trading logic — trigger thresholds, the Claude system
+  prompt, the Claude API key — lives there and is never duplicated or
+  shipped here. The one address this add-on hardcodes as a default
+  (`workflow_service_host`, a private LAN IP) is documented in its own
+  `DOCS.md`, satisfying the "no host addresses beyond what's already in
+  the docs" rule below.

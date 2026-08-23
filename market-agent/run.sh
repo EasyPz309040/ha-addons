@@ -10,7 +10,7 @@ mkdir -p /share/market-agent
 # in the foreground as the container's only job.
 exec env \
   INGRESS_PORT=8099 \
-  XWEB_HOST="$(bashio::config 'xweb_host')" \
+  XWEB_HOST="$(bashio::config 'workflow_service_host')" \
   MARKET_AGENT_SYMBOL="$(bashio::config 'market_agent_symbol')" \
   NOTIFY_SERVICE="$(bashio::config 'notify_service')" \
   SAXO_LOGIN_URL="$(bashio::config 'saxo_login_url')" \

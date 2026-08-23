@@ -1,5 +1,5 @@
-# Home Assistant add-on: EasyPz Market Agent. Live view of xWeb's Market
-# Agent loop via a persistent SignalR subscription.
+# Home Assistant add-on: EasyPz Market Agent. Live view of the Workflow
+# Service's Market Agent loop via a persistent SignalR subscription.
 #
 # BUILD_FROM is supplied by the Supervisor with the correct architecture base
 # image. Hardcoding a base breaks the build on any other arch.
@@ -12,7 +12,7 @@ FROM $BUILD_FROM
 # args declared before FROM don't survive into the build stage.
 ARG BUILD_VERSION
 
-# py3-pip + signalrcore: subscribes to xWeb's SignalR hub (/streamHub)
+# py3-pip + signalrcore: subscribes to the Workflow Service's SignalR hub (/streamHub)
 # instead of polling it. The build now needs PyPI reachable too, not just
 # Alpine's own mirrors. --break-system-packages: Alpine's system Python
 # enforces PEP 668 (externally-managed-environment); there's no competing

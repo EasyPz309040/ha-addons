@@ -5,8 +5,8 @@ Ingress means Home Assistant proxies this panel behind its own auth, so no
 port is exposed on the LAN and there is no separate login. All paths must
 be relative - HA serves the panel under a generated prefix that changes.
 
-The actual work (the persistent xWeb subscription, history, notifications)
-lives in market_agent.py - this module is just the page.
+The actual work (the persistent Workflow Service subscription, history,
+notifications) lives in market_agent.py - this module is just the page.
 """
 import html
 import json
@@ -20,13 +20,16 @@ import market_agent
 PORT = int(os.environ.get("INGRESS_PORT", "8099"))
 
 # connection_status() values -> (pill class, pill text). Says whether the
-# pipe to xWeb is up, not whether xWeb's own loop is still ticking - that's
-# the honest limit of what this add-on can actually know from its side.
+# pipe to the Workflow Service is up, not whether its own loop is still
+# ticking - that's the honest limit of what this add-on can actually know
+# from its side. "Workflow Service" (not xWeb) deliberately - that's an
+# internal solution name, not something a user of this add-on needs to
+# know or see.
 CONNECTION_PILLS = {
-    "connected":    ("pill-ok",      "xWeb: connected"),
-    "connecting":   ("pill-unknown", "xWeb: connecting…"),
-    "reconnecting": ("pill-warn",    "xWeb: reconnecting…"),
-    "disconnected": ("pill-warn",    "xWeb: disconnected"),
+    "connected":    ("pill-ok",      "Workflow Service: connected"),
+    "connecting":   ("pill-unknown", "Workflow Service: connecting…"),
+    "reconnecting": ("pill-warn",    "Workflow Service: reconnecting…"),
+    "disconnected": ("pill-warn",    "Workflow Service: disconnected"),
 }
 
 
@@ -62,7 +65,7 @@ def _parse_dotnet_dt(s):
     """Parse a Newtonsoft-serialized UTC DateTime (RunAt, NextRetryAfter).
 
     Always has a trailing Z (RunAt/NextRetryAfter are always DateTime.UtcNow
-    or derived from it on the xWeb side) and up to 7 fractional-second
+    or derived from it on the Workflow Service side) and up to 7 fractional-second
     digits (.NET ticks), one more than datetime.fromisoformat tolerates -
     truncate to microseconds rather than assume a fixed precision.
     """
@@ -81,12 +84,13 @@ def _parse_dotnet_dt(s):
 def _next_check_text(entries):
     """What the loop is expected to do next, and how confidently we know it.
 
-    xWeb's loop has two modes: a flat poll interval normally, or - when the
-    market's closed - sleeping until an exact reopen time it tells us via
-    NextRetryAfter. We only ever get the *interval itself* (not exposed in
-    the payload) by observing the gap between two consecutive non-closed
-    ticks, so that case is explicitly labelled "estimated"; the
-    market-closed case is exact, straight from xWeb.
+    The Workflow Service's loop has two modes: a flat poll interval
+    normally, or - when the market's closed - sleeping until an exact
+    reopen time it tells us via NextRetryAfter. We only ever get the
+    *interval itself* (not exposed in the payload) by observing the gap
+    between two consecutive non-closed ticks, so that case is explicitly
+    labelled "estimated"; the market-closed case is exact, straight from
+    the Workflow Service.
     """
     if not entries:
         return ""
@@ -214,7 +218,7 @@ def render_page(notice=None, good=True):
         saxo_pill_cls, saxo_pill_text = "pill-ok", "Saxo: connected"
 
     conn_pill_cls, conn_pill_text = CONNECTION_PILLS.get(
-        market_agent.connection_status(), ("pill-unknown", "xWeb: unknown"))
+        market_agent.connection_status(), ("pill-unknown", "Workflow Service: unknown"))
     last_update_text = "Last update: " + _relative_time(entries[-1].get("receivedAt") if entries else None)
     next_check_text = _next_check_text(entries)
 
@@ -287,8 +291,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._redirect(location)
             return self._send(
                 "<!doctype html><meta charset='utf-8'>"
-                "<p>Could not reach xWeb to start Saxo login. "
-                "Check that xWeb is reachable and try again.</p>"
+                "<p>Could not reach the Workflow Service to start Saxo login. "
+                "Check that it's reachable and try again.</p>"
                 "<p><a href='./'>&larr; back</a></p>",
                 status=502)
         return self._send(render_page())
