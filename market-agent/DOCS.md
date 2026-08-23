@@ -113,18 +113,24 @@ exposes it.
 
 **Three measure cards up top (Price move / Volatility / Volume), side by
 side** — each shows the measured value, its configured threshold, and
-whether it actually contributed to triggering (straight from the
-Workflow Service's own `Reasons`, not re-derived here). Below the cards,
-a fuller breakdown for Price move and Volume: Price move and Volatility
-are each computed *within that check's own lookback window* (first
-candle vs. last, and the window's own high–low range) against a fixed
-threshold; only Volume actually compares against the stored baseline. So
-Price move gets a window-start-vs-end table, Volume gets a real
-baseline-vs-current table, and the baseline snapshot (price/volatility at
-the time it was last set) is shown separately as reference only —
-showing all three as if they were the same kind of comparison would
-misrepresent how triggering actually works. A blank baseline means
-either this is genuinely the first check ever, or the Workflow Service
+whether it actually exceeded it this check (straight from the Workflow
+Service's own `Reasons`, not re-derived here). "Exceeded" only means this
+measure is one reason **Delta threshold met** is "yes" for this check —
+it does not mean a Claude call happened. Every background-loop check is
+a free preview, never billed (its "Status" is never `Completed` on its
+own); Delta threshold met: yes just says a real analysis *would be worth
+running*. Only the **Run AI Analysis** button actually bills one. Below
+the cards, a fuller breakdown for Price move and Volume: Price move and
+Volatility are each computed *within that check's own lookback window*
+(first candle vs. last, and the window's own high–low range) against a
+fixed threshold; only Volume actually compares against the stored
+baseline. So Price move gets a window-start-vs-end table, Volume gets a
+real baseline-vs-current table, and the baseline snapshot
+(price/volatility at the time it was last set) is shown separately as
+reference only — showing all three as if they were the same kind of
+comparison would misrepresent how the delta threshold is actually
+evaluated. A blank baseline means either this is genuinely the first
+check ever, or the Workflow Service
 restarted since the last one — its state has no persistent volume, so a
 redeploy resets it.
 

@@ -126,18 +126,26 @@ def _fmt_signed(v, fmt):
 
 
 def _reason_status(name, metrics):
-    """Whether a named trigger condition actually fired, straight from
-    Reasons - not re-derived from the raw numbers, since Reasons is the
-    Workflow Service's own authoritative answer and re-deriving it here
-    risks a rounding/edge-case mismatch. FirstRun is a special case: the
-    threshold comparisons are skipped entirely that check (no baseline to
-    compare against yet), not just "not exceeded" - worth saying so
-    rather than implying a comparison happened when it didn't.
+    """Whether a named measure crossed its own threshold this check,
+    straight from Reasons - not re-derived from the raw numbers, since
+    Reasons is the Workflow Service's own authoritative answer and
+    re-deriving it here risks a rounding/edge-case mismatch. FirstRun is a
+    special case: the threshold comparisons are skipped entirely that
+    check (no baseline to compare against yet), not just "not exceeded" -
+    worth saying so rather than implying a comparison happened when it
+    didn't.
+
+    Deliberately says "exceeded", never "triggered" - a crossed threshold
+    here just means this measure is one reason Delta threshold met is
+    "yes" for this check, not that any Claude call happened. Every
+    background-loop check is a free preview, never billed - only the Run
+    AI Analysis button actually calls Claude, so a routine check with
+    Delta threshold met: yes has still triggered nothing on its own.
     """
     reasons = metrics.get("Reasons") or []
     if "FirstRun" in reasons:
         return "not evaluated this check (first check / no baseline yet)"
-    return "exceeded — contributed to triggering" if name in reasons else "not exceeded"
+    return "exceeded" if name in reasons else "not exceeded"
 
 
 def _measure_card(label, value_text, sub_text, extra_cls=""):
@@ -532,7 +540,7 @@ a.pill:hover {{ text-decoration: underline; }}
 </div>
 <div class="card">
 <h2>Workflow History</h2>
-<table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th>
+<table><tr><th>Time</th><th>Status</th><th>Delta threshold met</th><th>Reasons</th>
 <th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
 </table>
@@ -744,9 +752,9 @@ def render_tick_page(ts):
 
     rows = [
         ("Status", html.escape(str(status or "?"))),
-        ("Triggered", "yes" if triggered else "no"),
+        ("Delta threshold met", "yes" if triggered else "no"),
         ("Reasons", html.escape(reasons)),
-        ("Last triggered before this", _fmt_dt(metrics.get("LastTriggered"))),
+        ("Last threshold met before this", _fmt_dt(metrics.get("LastTriggered"))),
     ]
     # Token usage/cost - only ever present on a Completed (billed) tick, and
     # only once the Workflow Service actually reports them; absent today,
