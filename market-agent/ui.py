@@ -475,7 +475,14 @@ def render_tick_page(ts):
 # live (Anthropic has no API for that - see ACTION-PLAN.md). Needs manual
 # updates if pricing changes or a new model shows up; an unrecognized
 # Model just shows "unknown" rather than a guessed number.
+#
+# claude-opus-4-8: xWeb's actual default (Claude:Model config) - checked
+# against Anthropic's own docs (platform.claude.com), same rate as Opus
+# 4.5. A dateless pinned snapshot, not an evergreen alias, so this rate
+# won't silently drift out from under a fixed model the way it could for
+# a "-latest"-style name.
 _CLAUDE_RATES_PER_MTOK = {
+    "claude-opus-4-8": (5.00, 25.00),
     "claude-opus-4-5": (5.00, 25.00),
     "claude-sonnet-4-5": (3.00, 15.00),
 }
