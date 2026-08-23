@@ -84,7 +84,17 @@ def login_url():
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"
 STATEFILE = SHARE / ".notify-state.json"
-MAX_ENTRIES = 500
+# This log is a panel convenience, not an audit trail - no need to keep
+# hundreds of routine ticks. SaxoAuthRequired is capped separately and
+# smaller: an expired session produces one near-identical entry per poll
+# until someone logs back in, and none of the extras beyond a handful are
+# useful - without a separate cap they'd crowd out real history out of the
+# single MAX_ENTRIES budget during exactly the outage you'd want history
+# for. Self-healing: an existing oversized log.jsonl (from before this
+# policy) gets pruned down on the very next append, no migration needed.
+MAX_ENTRIES = 50
+MAX_AUTH_REQUIRED_ENTRIES = 20
+_LOW_VALUE_STATUSES = {"SaxoAuthRequired"}
 
 _state_lock = threading.Lock()
 
@@ -158,15 +168,13 @@ def notify(title, message, url=None):
 
 def _append(entry):
     SHARE.mkdir(parents=True, exist_ok=True)
-    lines = []
-    if LOGFILE.exists():
-        try:
-            lines = LOGFILE.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            lines = []
-    lines.append(json.dumps(entry))
-    lines = lines[-MAX_ENTRIES:]
-    LOGFILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    entries = history(limit=10_000)  # whatever's on disk so far, pre-trim
+    entries.append(entry)
+    low_value = [e for e in entries if e.get("Status") in _LOW_VALUE_STATUSES]
+    normal = [e for e in entries if e.get("Status") not in _LOW_VALUE_STATUSES]
+    kept = low_value[-MAX_AUTH_REQUIRED_ENTRIES:] + normal[-MAX_ENTRIES:]
+    kept.sort(key=lambda e: e.get("receivedAt", 0))
+    LOGFILE.write_text("\n".join(json.dumps(e) for e in kept) + "\n", encoding="utf-8")
 
 
 def history(limit=100):

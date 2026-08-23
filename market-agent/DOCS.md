@@ -1,8 +1,28 @@
 # EasyPz Market Agent
 
 A live view of the Workflow Service's `MarketAgentBackgroundService` loop:
-a price chart, a table of recent checks, and a button to trigger a real
-(billed) analysis on demand.
+a price chart, the AI analysis, and the workflow history, in three sections.
+
+## Panel layout
+
+The panel is three cards, top to bottom:
+
+1. **Status** — symbol, connection/Saxo pills, last update/next check, the
+   price chart, and a compact side-by-side summary (**Price move** /
+   **Volatility** / **Volume**) of the *last* check — the same measure
+   cards described under "Workflow detail" below, just for whichever check
+   just happened rather than one you clicked into. The chart's time axis
+   labels are the candles' own timestamps (real price data time, from
+   Saxo), not when the add-on happened to receive the check that carried
+   them.
+2. **AI Analysis** — the **Run AI Analysis** button (a real, billed Claude
+   call, on demand) and, underneath it, the most recent *billed* run's
+   question and answer — this shows up here automatically the moment one
+   happens, whether triggered by the button or by the background loop's
+   own threshold check, not just after you click it yourself.
+3. **Workflow History** — every check the Workflow Service's loop has
+   produced recently, one row each. Click a row (the little chip on its
+   time) for that check's full **Workflow detail**.
 
 ## How it stays live
 
@@ -81,37 +101,39 @@ below to the exact service name (HA Developer Tools → **Actions** →
 search `notify`) and pushes start working. Until it's set, pushes are
 silently skipped — everything else still works.
 
-## Check detail
+## Workflow detail
 
-Click any row's time in **Recent checks** for that check's full data —
-every `TriggerMetrics` field, not just the four summarized in the table,
-plus that check's own candle chart. If it was a real (billed) run, the
-Claude question/answer and (once the Workflow Service reports it) token
-counts and an estimated cost show up here too. Nothing new is collected
-for this — the full payload was already being persisted per check, this
-just exposes it.
+Click any row in **Workflow History** for that check's full data — every
+`TriggerMetrics` field, not just the four summarized in the table, plus
+that check's own candle chart. If it was a real (billed) run, the Claude
+question/answer and (once the Workflow Service reports it) token counts
+and an estimated cost show up here too. Nothing new is collected for
+this — the full payload was already being persisted per check, this just
+exposes it.
 
-**"How this was evaluated" is split into three sections on purpose, not
-one flat table** — Price move and Volatility are each computed *within
-that check's own lookback window* (first candle vs. last, and the
-window's own high–low range) against a fixed threshold; only Volume
-actually compares against the stored baseline. Showing all three as if
-they were the same kind of comparison would misrepresent how triggering
-actually works, so Price move gets a window-start-vs-end table, Volume
-gets a real baseline-vs-current table, and the baseline snapshot
-(price/volatility at the time it was last set) is shown separately as
-reference only. A blank baseline means either this is genuinely the
-first check ever, or the Workflow Service restarted since the last one
-— its state has no persistent volume, so a redeploy resets it.
+**Three measure cards up top (Price move / Volatility / Volume), side by
+side** — each shows the measured value, its configured threshold, and
+whether it actually contributed to triggering (straight from the
+Workflow Service's own `Reasons`, not re-derived here). Below the cards,
+a fuller breakdown for Price move and Volume: Price move and Volatility
+are each computed *within that check's own lookback window* (first
+candle vs. last, and the window's own high–low range) against a fixed
+threshold; only Volume actually compares against the stored baseline. So
+Price move gets a window-start-vs-end table, Volume gets a real
+baseline-vs-current table, and the baseline snapshot (price/volatility at
+the time it was last set) is shown separately as reference only —
+showing all three as if they were the same kind of comparison would
+misrepresent how triggering actually works. A blank baseline means
+either this is genuinely the first check ever, or the Workflow Service
+restarted since the last one — its state has no persistent volume, so a
+redeploy resets it.
 
-Each section also shows **measured vs. threshold** and whether that
-condition actually contributed to triggering (straight from the
-Workflow Service's own `Reasons`, not re-derived here). On the very
-first check for a symbol there's no baseline yet, so none of the three
-comparisons run at all that check — shown as "not evaluated", not as a
-false "not exceeded". Older log entries recorded before the Workflow
-Service started reporting its thresholds show "Threshold not reported
-yet" instead of a number — the measured value is still shown either way.
+On the very first check for a symbol there's no baseline yet, so none of
+the three comparisons run at all that check — the cards say "not
+evaluated", not a false "not exceeded". Older log entries recorded
+before the Workflow Service started reporting its thresholds show
+"threshold not reported yet" instead of a number — the measured value is
+still shown either way.
 
 Cost is estimated locally from a small rate table keyed by model name,
 not fetched from Anthropic — there's no API for querying actual account
@@ -120,8 +142,14 @@ guessed number; the table needs manual updates if pricing changes.
 
 ## History
 
-`/share/market-agent/log.jsonl`, bounded to the most recent 500 checks —
-check detail pages only work for entries still in that window.
+`/share/market-agent/log.jsonl`. This is a panel convenience, not an
+audit trail, so it's kept small: the most recent 50 checks, plus the
+most recent 20 `SaxoAuthRequired` ones tracked separately (an expired
+Saxo session otherwise produces one near-identical entry every poll until
+someone logs back in, which would otherwise crowd out real history out of
+a single shared budget during exactly the outage you'd want history
+for). Workflow detail pages only work for entries still in that window —
+older links go stale and say so rather than erroring.
 
 ## Options
 

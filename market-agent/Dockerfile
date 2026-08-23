@@ -27,6 +27,7 @@ LABEL io.hass.version="${BUILD_VERSION}" \
 COPY run.sh /run.sh
 COPY ui.py /usr/bin/ui.py
 COPY market_agent.py /usr/bin/market_agent.py
+COPY osifont-lgpl3fe.woff /usr/bin/osifont-lgpl3fe.woff
 RUN chmod a+x /run.sh /usr/bin/ui.py
 
 CMD [ "/run.sh" ]
