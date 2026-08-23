@@ -1,14 +1,14 @@
 # EasyPz Market Agent
 
 A live view of the Workflow Service's `MarketAgentBackgroundService` loop:
-a price chart, a table of recent ticks, and a button to trigger a real
+a price chart, a table of recent checks, and a button to trigger a real
 (billed) analysis on demand.
 
 ## How it stays live
 
 A background thread holds one persistent connection to the Workflow
 Service's SignalR hub (`/streamHub`, topic `marketagent.preview`) open
-for the life of the container — no polling. Every tick the Workflow
+for the life of the container — no polling. Every check the Workflow
 Service's own loop produces (by default every 5 minutes, free) shows up
 here as it happens. A dropped connection (a Workflow Service restart,
 network blip) reconnects on its own.
@@ -21,15 +21,15 @@ Service: connected", amber "Workflow Service: connecting…"/
 "Workflow Service: reconnecting…", or amber "Workflow Service:
 disconnected" if even the automatic reconnect has dropped and a fresh
 connection is being rebuilt. This says the pipe to it is open, not that
-its own loop is still ticking on schedule.
+its own loop is still checking on schedule.
 
 Two more lines say what the loop is actually doing: **"Last update"**
-(how long ago the most recent tick arrived) and **"Next check"** (when
+(how long ago the most recent check arrived) and **"Next check"** (when
 the next one's expected). "Next check" is exact only when the market's
 closed — the Workflow Service tells us the precise reopen time and it's
 shown as "Market closed — reopens in Xh Ym". Otherwise it's labelled
 "(estimated)": this add-on isn't told the configured poll interval, so
-it infers one from the gap between the last two ticks. If the connection
+it infers one from the gap between the last two checks. If the connection
 pill is green but "Last update" is far older than "Next check" ever
 predicted, that's more likely the loop being stuck than a connectivity
 problem.
@@ -38,7 +38,7 @@ problem.
 
 A colored pill next to the symbol shows whether the Workflow Service
 currently has a valid Saxo session — green "Saxo: connected", red "Saxo:
-login required", or grey "Saxo: unknown" before the first tick arrives.
+login required", or grey "Saxo: unknown" before the first check arrives.
 
 Clicking the pill doesn't send your browser to the Workflow Service
 directly — it hits this add-on's own `/saxo-login` route, which asks the
@@ -61,13 +61,13 @@ source.
 
 ## Notifications
 
-When a tick's threshold condition flips from not-met to met, a push
+When a check's threshold condition flips from not-met to met, a push
 notification fires via `notify_service` (below) — once per transition,
-not repeated every tick while it stays true.
+not repeated every check while it stays true.
 
-Saxo login state gets the same treatment: a push fires once when a tick
+Saxo login state gets the same treatment: a push fires once when a check
 shows login is required, and once more when it resolves — covering both
-the background loop's routine ticks and the manual **Run real analysis
+the background loop's routine checks and the manual **Run real analysis
 now** button, not just the button. The login-required push is tappable
 — it opens the login flow directly rather than just opening Home
 Assistant itself (that's the difference between putting a URL in the
@@ -81,15 +81,15 @@ below to the exact service name (HA Developer Tools → **Actions** →
 search `notify`) and pushes start working. Until it's set, pushes are
 silently skipped — everything else still works.
 
-## Tick detail
+## Check detail
 
-Click any row's time in **Recent ticks** for that tick's full data — every
-`TriggerMetrics` field, not just the four summarized in the table, plus
-that tick's own candle chart. If it was a real (billed) run, the Claude
-question/answer and (once the Workflow Service reports it) token counts
-and an estimated cost show up here too. Nothing new is collected for
-this — the full payload was already being persisted per tick, this just
-exposes it.
+Click any row's time in **Recent checks** for that check's full data —
+every `TriggerMetrics` field, not just the four summarized in the table,
+plus that check's own candle chart. If it was a real (billed) run, the
+Claude question/answer and (once the Workflow Service reports it) token
+counts and an estimated cost show up here too. Nothing new is collected
+for this — the full payload was already being persisted per check, this
+just exposes it.
 
 Cost is estimated locally from a small rate table keyed by model name,
 not fetched from Anthropic — there's no API for querying actual account
@@ -98,8 +98,8 @@ guessed number; the table needs manual updates if pricing changes.
 
 ## History
 
-`/share/market-agent/log.jsonl`, bounded to the most recent 500 ticks —
-tick detail pages only work for entries still in that window.
+`/share/market-agent/log.jsonl`, bounded to the most recent 500 checks —
+check detail pages only work for entries still in that window.
 
 ## Options
 

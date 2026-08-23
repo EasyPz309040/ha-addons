@@ -277,7 +277,7 @@ a.pill:hover {{ text-decoration: underline; }}
 <button type="submit">Run AI Analysis</button>
 </form>
 <p class="hint">Billed Claude call</p>
-<h2>Recent ticks</h2>
+<h2>Recent checks</h2>
 <table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th>
 <th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
@@ -291,7 +291,7 @@ drawMarketChart('chart', {candles_json}, {baseline_price_json});
 
 TICK_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport"
-content="width=device-width,initial-scale=1"><title>Market Agent - Tick detail</title>
+content="width=device-width,initial-scale=1"><title>Market Agent - Check detail</title>
 <style>
 :root {{ color-scheme: light dark; }}
 body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -310,7 +310,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .8rem;
   background: rgba(127,127,127,.1); padding: 10px 12px; border-radius: 8px; }}
 </style></head><body>
 <a class="back" href="./">&larr; back to Market Agent</a>
-<h1>Tick detail — {ts}</h1>
+<h1>Check detail — {ts}</h1>
 {chart_block}
 <table>
 {metric_rows}
@@ -342,7 +342,7 @@ def render_page(notice=None, good=True):
         cls = "banner " + ("notice-ok" if good else "notice-bad")
         banner = f"<div class='{cls}'>{html.escape(notice)}</div>"
     elif not entries:
-        banner = "<div class='banner'>No ticks received yet - waiting on market agent workflow service's first broadcast.</div>"
+        banner = "<div class='banner'>No checks received yet - waiting on market agent workflow service's first broadcast.</div>"
 
     latest_status = entries[-1].get("Status") if entries else None
     if latest_status is None:
@@ -380,7 +380,7 @@ def render_page(notice=None, good=True):
                 vol=_fmt_pct(metrics.get("AvgVolatilityPercent")),
                 volume=_fmt_num(metrics.get("AvgVolume"))))
     if not rows:
-        rows.append("<tr><td colspan='7'>No ticks yet.</td></tr>")
+        rows.append("<tr><td colspan='7'>No checks yet.</td></tr>")
 
     latest_entry = entries[-1] if entries else {}
     candles, candles_json, baseline_price_json = _candles_payload(latest_entry)
@@ -392,7 +392,7 @@ def render_page(notice=None, good=True):
                           f"last {len(candles)} candles, {start}–{end}"
                           + (" · amber dashed line is the trigger baseline" if baseline_price is not None else ""))
     else:
-        chart_caption = "No candle data in the latest tick yet."
+        chart_caption = "No candle data in the latest check yet."
 
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
@@ -417,7 +417,7 @@ def render_tick_page(ts):
     if entry is None:
         return TICK_PAGE.format(
             ts="not found", chart_block="",
-            metric_rows="<tr><td colspan='2'>That tick has aged out of history "
+            metric_rows="<tr><td colspan='2'>That check has aged out of history "
                         "(bounded to the most recent 500) or the link is stale.</td></tr>",
             signal_block="")
 
@@ -461,8 +461,8 @@ def render_tick_page(ts):
         signal_block = ""
 
     candles, candles_json, baseline_price_json = _candles_payload(entry)
-    caption = (f"{len(candles)} candles for this tick" if len(candles) > 1
-               else "No candle data on this tick.")
+    caption = (f"{len(candles)} candles for this check" if len(candles) > 1
+               else "No candle data on this check.")
     chart_block = _render_chart_block(entry, caption)
 
     return TICK_PAGE.format(

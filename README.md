@@ -14,7 +14,7 @@ https://github.com/EasyPz309040/ha-addons
 | Add-on | What it does |
 |---|---|
 | [EasyPz Cluster Control](cluster-control/) | Runs Ansible playbooks against a home fleet on a schedule, with the playbooks pulled from a separate private repo before every run. |
-| [EasyPz Market Agent](market-agent/) | Live view of the Workflow Service's Market Agent loop — price chart, recent ticks, on-demand real analysis, push notifications on trigger. |
+| [EasyPz Market Agent](market-agent/) | Live view of the Workflow Service's Market Agent loop — price chart, recent checks, on-demand real analysis, push notifications on trigger. |
 
 ## Why this repo is public and separate
 
