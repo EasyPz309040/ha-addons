@@ -140,7 +140,9 @@ content="width=device-width,initial-scale=1"><title>Market Agent</title>
 body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px; background: transparent; }}
 h1 {{ font-size: 1.6rem; margin: 0 0 4px; }}
-.meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
+.meta {{ display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;
+  font-size: .85rem; margin-bottom: 16px; }}
+.meta .dim {{ opacity: .7; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 10px; }}
 button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
@@ -162,20 +164,22 @@ th.num {{ text-align: right; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
-.pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
-  border-radius: 999px; font-size: .75rem; font-weight: 600; text-decoration: none; }}
-.pill::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }}
-.pill-ok {{ background: rgba(46,125,50,.14); color: #2e7d32; }}
-.pill-warn {{ background: rgba(198,40,40,.14); color: #c62828; }}
-.pill-unknown {{ background: rgba(127,127,127,.14); color: var(--text-faint, #888); }}
+.pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px;
+  border-radius: 999px; font-size: .85rem; font-weight: 700; text-decoration: none;
+  color: #fff; line-height: 1.3; }}
+.pill-ok {{ background: #2e7d32; }}
+.pill-warn {{ background: #c62828; }}
+.pill-unknown {{ background: #5f6368; }}
 a.pill:hover {{ filter: brightness(1.15); }}
 </style></head><body>
 <h1>Market Agent</h1>
-<div class="meta">{symbol}
-&middot; <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
-&middot; <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" target="_blank" rel="noopener noreferrer" title="Open Saxo login">{saxo_pill_text}</a>
-&middot; {last_update_text}
-&middot; {next_check_text}</div>
+<div class="meta">
+<span class="dim">{symbol}</span>
+<span class="pill {conn_pill_cls}">{conn_pill_text}</span>
+<a class="pill {saxo_pill_cls}" href="{saxo_login_url}" target="_blank" rel="noopener noreferrer" title="Open Saxo login">{saxo_pill_text}</a>
+<span class="dim">{last_update_text}</span>
+<span class="dim">{next_check_text}</span>
+</div>
 {banner}
 <div class="card">
 <canvas id="chart" width="900" height="220"></canvas>
