@@ -140,9 +140,8 @@ content="width=device-width,initial-scale=1"><title>Market Agent</title>
 body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px; background: transparent; }}
 h1 {{ font-size: 1.6rem; margin: 0 0 4px; }}
-.meta {{ display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;
-  font-size: .85rem; margin-bottom: 16px; }}
-.meta .dim {{ opacity: .7; }}
+.meta {{ display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem;
+  font-size: .8rem; opacity: .7; margin-bottom: 16px; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 10px; }}
 button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
@@ -164,21 +163,21 @@ th.num {{ text-align: right; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
-.pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px;
-  border-radius: 999px; font-size: .85rem; font-weight: 700; text-decoration: none;
-  color: #fff; line-height: 1.3; }}
-.pill-ok {{ background: #2e7d32; }}
-.pill-warn {{ background: #c62828; }}
-.pill-unknown {{ background: #5f6368; }}
-a.pill:hover {{ filter: brightness(1.15); }}
+.pill {{ display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; color: inherit; text-decoration: none; }}
+.pill::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
+.pill-ok::before {{ background: #43a047; }}
+.pill-warn::before {{ background: #e53935; }}
+.pill-unknown::before {{ background: #9e9e9e; }}
+a.pill:hover {{ text-decoration: underline; }}
 </style></head><body>
 <h1>Market Agent</h1>
 <div class="meta">
-<span class="dim">{symbol}</span>
+<span>{symbol}</span>
 <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
 <a class="pill {saxo_pill_cls}" href="{saxo_login_url}" target="_blank" rel="noopener noreferrer" title="Open Saxo login">{saxo_pill_text}</a>
-<span class="dim">{last_update_text}</span>
-<span class="dim">{next_check_text}</span>
+<span>{last_update_text}</span>
+<span>{next_check_text}</span>
 </div>
 {banner}
 <div class="card">
