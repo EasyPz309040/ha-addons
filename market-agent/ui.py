@@ -81,6 +81,19 @@ def _parse_dotnet_dt(s):
         return None
 
 
+def _fmt_pct(v):
+    return f"{v:.2f}%" if isinstance(v, (int, float)) else "—"
+
+
+def _fmt_num(v):
+    return f"{v:,.0f}" if isinstance(v, (int, float)) else "—"
+
+
+def _fmt_candle_time(s):
+    dt = _parse_dotnet_dt(s)
+    return dt.strftime("%H:%M") if dt else ""
+
+
 def _next_check_text(entries):
     """What the loop is expected to do next, and how confidently we know it.
 
@@ -140,9 +153,12 @@ button:hover {{ background: rgba(127,127,127,.25); }}
 .notice-ok {{ background: rgba(46,125,50,.14); }}
 .notice-bad {{ background: rgba(198,40,40,.14); }}
 h2 {{ font-size: .95rem; margin: 22px 0 8px; }}
-canvas {{ width: 100%; height: 180px; display: block; }}
+canvas {{ width: 100%; height: 220px; display: block; }}
+.chart-caption {{ font-size: .78rem; opacity: .65; margin: -4px 0 8px; }}
 table {{ width: 100%; border-collapse: collapse; font-size: .82rem; }}
 th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,127,127,.18); }}
+td.num {{ font-variant-numeric: tabular-nums; text-align: right; }}
+th.num {{ text-align: right; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
@@ -162,34 +178,76 @@ a.pill:hover {{ filter: brightness(1.15); }}
 &middot; {next_check_text}</div>
 {banner}
 <div class="card">
-<canvas id="chart" width="900" height="180"></canvas>
+<canvas id="chart" width="900" height="220"></canvas>
 </div>
+<p class="chart-caption">{chart_caption}</p>
 <form method="post" action="./run">
 <button type="submit">Run AI Trend Analysis (billed Claude call)</button>
 </form>
 <h2>Recent ticks</h2>
-<table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th></tr>
+<table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th>
+<th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
 </table>
 <script>
 const candles = {candles_json};
+const baselinePrice = {baseline_price_json};
 const c = document.getElementById('chart');
 if (candles.length > 1 && c.getContext) {{
   const ctx = c.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const w = c.clientWidth || 900, h = 180;
-  c.width = w * dpr; c.height = h * dpr;
+  const cssW = c.clientWidth || 900, cssH = 220;
+  c.width = cssW * dpr; c.height = cssH * dpr;
   ctx.scale(dpr, dpr);
+  ctx.font = '11px system-ui, sans-serif';
+
   const vals = candles.map(k => (k.CloseBid + k.CloseAsk) / 2);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const pad = 8;
-  const x = i => pad + (i / (vals.length - 1)) * (w - pad * 2);
-  const y = v => max === min ? h / 2 : h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+  const padL = 62, padR = 10, padT = 10, padB = 20;
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (baselinePrice !== null) {{ min = Math.min(min, baselinePrice); max = Math.max(max, baselinePrice); }}
+  if (max === min) {{ max += 1; min -= 1; }}  // flat data would otherwise divide by zero below
+
+  const x = i => padL + (i / (vals.length - 1)) * (cssW - padL - padR);
+  const y = v => cssH - padB - ((v - min) / (max - min)) * (cssH - padT - padB);
+
+  const muted = getComputedStyle(document.body).color;
+  ctx.strokeStyle = muted; ctx.globalAlpha = .25; ctx.lineWidth = 1;
+  [min, max].forEach(v => {{
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(cssW - padR, y(v)); ctx.stroke();
+  }});
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = muted; ctx.textBaseline = 'middle';
+  ctx.textAlign = 'right';
+  ctx.fillText(max.toFixed(4), padL - 8, y(max));
+  ctx.fillText(min.toFixed(4), padL - 8, y(min));
+
+  if (baselinePrice !== null) {{
+    ctx.save();
+    ctx.strokeStyle = '#b26a00'; ctx.globalAlpha = .6; ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(padL, y(baselinePrice)); ctx.lineTo(cssW - padR, y(baselinePrice)); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#b26a00'; ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+    ctx.fillText('baseline ' + baselinePrice.toFixed(4), padL + 4, y(baselinePrice) - 6);
+  }}
+
   ctx.strokeStyle = '#4a90d9';
   ctx.lineWidth = 1.6;
   ctx.beginPath();
   vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
   ctx.stroke();
+
+  const lastX = x(vals.length - 1), lastY = y(vals[vals.length - 1]);
+  ctx.fillStyle = '#4a90d9';
+  ctx.beginPath(); ctx.arc(lastX, lastY, 3, 0, 7); ctx.fill();
+  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  ctx.fillText(vals[vals.length - 1].toFixed(4), lastX - 6, lastY - 6);
+
+  ctx.fillStyle = muted; ctx.globalAlpha = .7; ctx.textBaseline = 'alphabetic';
+  const times = candles.map(k => k.Time || '');
+  if (times[0]) {{ ctx.textAlign = 'left'; ctx.fillText(times[0], padL, cssH - 4); }}
+  if (times[times.length - 1]) {{ ctx.textAlign = 'right'; ctx.fillText(times[times.length - 1], cssW - padR, cssH - 4); }}
 }}
 </script>
 </body></html>"""
@@ -231,20 +289,36 @@ def render_page(notice=None, good=True):
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(e.get("receivedAt", 0)))
         rows.append(
             "<tr><td>{ts}</td><td class='{cls}'>{status}</td>"
-            "<td class='{tcls}'>{trig}</td><td>{reasons}</td></tr>".format(
+            "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
+            "<td class='num'>{move}</td><td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
                 ts=ts,
                 cls="bad" if status == "SaxoAuthRequired" else "ok",
                 status=html.escape(str(status or "?")),
                 tcls="triggered" if triggered else "",
                 trig="yes" if triggered else "no",
-                reasons=html.escape(reasons)))
+                reasons=html.escape(reasons),
+                move=_fmt_pct(metrics.get("PriceMovePercent")),
+                vol=_fmt_pct(metrics.get("AvgVolatilityPercent")),
+                volume=_fmt_num(metrics.get("AvgVolume"))))
     if not rows:
-        rows.append("<tr><td colspan='4'>No ticks yet.</td></tr>")
+        rows.append("<tr><td colspan='7'>No ticks yet.</td></tr>")
 
-    candles = (entries[-1].get("EvalCandles") if entries else None) or []
+    latest_entry = entries[-1] if entries else {}
+    candles = latest_entry.get("EvalCandles") or []
     candles_json = json.dumps([
-        {"CloseBid": k.get("CloseBid", 0), "CloseAsk": k.get("CloseAsk", 0)}
+        {"CloseBid": k.get("CloseBid", 0), "CloseAsk": k.get("CloseAsk", 0),
+         "Time": _fmt_candle_time(k.get("Time"))}
         for k in candles])
+    baseline_price = (latest_entry.get("Metrics") or {}).get("BaselinePrice")
+    baseline_price_json = json.dumps(baseline_price) if isinstance(baseline_price, (int, float)) else "null"
+
+    if len(candles) > 1:
+        start, end = _fmt_candle_time(candles[0].get("Time")), _fmt_candle_time(candles[-1].get("Time"))
+        chart_caption = (f"{market_agent.SYMBOL} mid price (bid/ask average) — "
+                          f"last {len(candles)} candles, {start}–{end}"
+                          + (" · amber dashed line is the trigger baseline" if baseline_price is not None else ""))
+    else:
+        chart_caption = "No candle data in the latest tick yet."
 
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
@@ -253,6 +327,8 @@ def render_page(notice=None, good=True):
         conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
         last_update_text=html.escape(last_update_text),
         next_check_text=html.escape(next_check_text),
+        chart_caption=html.escape(chart_caption),
+        baseline_price_json=baseline_price_json,
         rows="".join(rows), candles_json=candles_json)
 
 
