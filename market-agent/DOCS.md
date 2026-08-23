@@ -68,7 +68,11 @@ not repeated every tick while it stays true.
 Saxo login state gets the same treatment: a push fires once when a tick
 shows login is required, and once more when it resolves — covering both
 the background loop's routine ticks and the manual **Run real analysis
-now** button, not just the button.
+now** button, not just the button. The login-required push is tappable
+— it opens the login flow directly rather than just opening Home
+Assistant itself (that's the difference between putting a URL in the
+notification's `data.url` field, which makes it a real tap target, and
+only mentioning it in the message text, which doesn't).
 
 Notifications need no secret or long-lived token — this add-on has its
 own Supervisor, which proxies the Home Assistant API automatically

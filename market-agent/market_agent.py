@@ -117,19 +117,30 @@ def _write_state(state):
     STATEFILE.write_text(json.dumps(state), encoding="utf-8")
 
 
-def notify(title, message):
+def notify(title, message, url=None):
     """Best-effort push via the Supervisor's Home Assistant API proxy.
 
     Silently does nothing if notify_service isn't configured yet, or if
     the push itself fails - a notification failure must never take down
     the subscriber thread or hide a real market/auth event from the log.
+
+    `url`, when given, goes in the payload's data.url - the HA companion
+    app field that actually makes a notification open that URL when
+    tapped. Putting a URL only in `message` (as plain text, the previous
+    version of this function did only that) does NOT make it tappable -
+    without data.url, tapping falls back to the app's default action,
+    which opens Home Assistant itself at its own configured server URL,
+    not anything mentioned in the message text.
     """
     if not NOTIFY_SERVICE or not SUPERVISOR_TOKEN:
         log.info("notify skipped (not configured): %s: %s", title, message)
         return
-    url = f"http://supervisor/core/api/services/notify/{NOTIFY_SERVICE}"
-    payload = json.dumps({"title": title, "message": message}).encode()
-    req = urllib.request.Request(url, data=payload, method="POST", headers={
+    api_url = f"http://supervisor/core/api/services/notify/{NOTIFY_SERVICE}"
+    body = {"title": title, "message": message}
+    if url:
+        body["data"] = {"url": url}
+    payload = json.dumps(body).encode()
+    req = urllib.request.Request(api_url, data=payload, method="POST", headers={
         "Authorization": f"Bearer {SUPERVISOR_TOKEN}",
         "Content-Type": "application/json",
     })
@@ -213,7 +224,7 @@ def _on_data(args):
         state = _read_state()
 
         if saxo_auth_required and not state.get("last_saxo_auth_required"):
-            notify("Market Agent", f"Saxo login required: {login_url()}")
+            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
         elif state.get("last_saxo_auth_required") and not saxo_auth_required:
             notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
         state["last_saxo_auth_required"] = saxo_auth_required
@@ -292,7 +303,7 @@ def trigger_real_run():
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         if e.code == 401:
-            notify("Market Agent", f"Saxo login required: {login_url()}")
+            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
             return False, f"Saxo authentication required. Log in: {login_url()}"
         return False, f"Workflow Service returned {e.code}: {body}"
     except Exception as e:

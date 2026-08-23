@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.9.1"
+version: "1.10.0"
 slug: "market-agent"
 description: "Live view of the Workflow Service's Market Agent loop: price chart, recent ticks, and an on-demand real analysis run, with push notifications when the movement threshold is met."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
