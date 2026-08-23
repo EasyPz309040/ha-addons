@@ -91,6 +91,19 @@ counts and an estimated cost show up here too. Nothing new is collected
 for this — the full payload was already being persisted per check, this
 just exposes it.
 
+**"How this was evaluated" is split into three sections on purpose, not
+one flat table** — Price move and Volatility are each computed *within
+that check's own lookback window* (first candle vs. last, and the
+window's own high–low range) against a fixed threshold; only Volume
+actually compares against the stored baseline. Showing all three as if
+they were the same kind of comparison would misrepresent how triggering
+actually works, so Price move gets a window-start-vs-end table, Volume
+gets a real baseline-vs-current table, and the baseline snapshot
+(price/volatility at the time it was last set) is shown separately as
+reference only. A blank baseline means either this is genuinely the
+first check ever, or the Workflow Service restarted since the last one
+— its state has no persistent volume, so a redeploy resets it.
+
 Cost is estimated locally from a small rate table keyed by model name,
 not fetched from Anthropic — there's no API for querying actual account
 balance or cost. An unrecognized model shows "unknown" rather than a

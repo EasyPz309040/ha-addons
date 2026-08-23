@@ -99,6 +99,112 @@ def _fmt_dt(s):
     return dt.strftime("%Y-%m-%d %H:%M") if dt else "—"
 
 
+def _fmt_price(v):
+    return f"{v:.4f}" if isinstance(v, (int, float)) else "—"
+
+
+def _fmt_signed(v, fmt):
+    if not isinstance(v, (int, float)):
+        return "—"
+    return f"+{v:{fmt}}" if v >= 0 else f"{v:{fmt}}"
+
+
+def _render_trigger_detail(entry):
+    """Price move and Volatility are computed *within this window itself*
+    (first candle vs last, and the window's own high-low range) against a
+    fixed threshold - NOT a comparison to the stored baseline, however
+    natural that assumption is. Only Volume actually compares against the
+    baseline (this window's average vs. the baseline average x a
+    multiplier) - confirmed directly against MarketTriggerAnalysis.Evaluate
+    in xCalc/Model.Core, not assumed. Built as three clearly separate
+    sections instead of one flat table so this distinction is visible
+    rather than implied.
+    """
+    metrics = entry.get("Metrics") or {}
+    candles = entry.get("EvalCandles") or []
+
+    parts = ["<h2>How this was evaluated</h2>"]
+
+    # --- Price move: window-internal, first candle vs last candle ---
+    parts.append("<h3>Price move</h3>")
+    if len(candles) >= 2:
+        first, last = candles[0], candles[-1]
+
+        def mid(c):
+            bid, ask = c.get("CloseBid"), c.get("CloseAsk")
+            return (bid + ask) / 2 if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) else None
+
+        p0, p1 = mid(first), mid(last)
+        t0, t1 = _fmt_candle_time(first.get("Time")), _fmt_candle_time(last.get("Time"))
+        diff = (p1 - p0) if (p0 is not None and p1 is not None) else None
+        # Signed % computed here from p0/p1, NOT metrics["PriceMovePercent"] -
+        # that field is always Math.Abs(...) on the Workflow Service side
+        # (it's compared against a threshold as a magnitude, direction
+        # doesn't matter for triggering), so reusing it here would show
+        # "+0.60%" even on a tick where price fell - caught by testing
+        # with a real down-move before shipping, not assumed correct.
+        pct = (diff / p0 * 100) if (diff is not None and p0) else None
+        parts.append(
+            "<table class='compare'><tr><th></th><th>Time</th><th class='num'>Price</th></tr>"
+            f"<tr><td>Window start</td><td>{html.escape(t0)}</td><td class='num'>{_fmt_price(p0)}</td></tr>"
+            f"<tr><td>Window end (current)</td><td>{html.escape(t1)}</td><td class='num'>{_fmt_price(p1)}</td></tr>"
+            f"<tr><td>Change</td><td></td><td class='num'>{_fmt_signed(diff, '.4f')} "
+            f"({_fmt_signed(pct, '.2f')}%)</td></tr>"
+            "</table>")
+    else:
+        parts.append("<p class='note'>No candle data on this check to compute a window.</p>")
+    parts.append(
+        f"<p class='note'>Measured: {_fmt_pct(metrics.get('PriceMovePercent'))} move from this "
+        "window's first candle to its last - compared against a fixed threshold, not the baseline below.</p>")
+
+    # --- Volatility: also window-internal, no baseline comparison exists ---
+    parts.append("<h3>Volatility</h3>")
+    parts.append(
+        f"<p>This window's average high–low range: <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>"
+        "<p class='note'>Also compared against a fixed threshold, not the baseline - there's no "
+        "baseline volatility comparison in the trigger logic itself.</p>")
+
+    # --- Volume: the one measure that's genuinely baseline vs current ---
+    parts.append("<h3>Volume</h3>")
+    avg_vol, base_vol = metrics.get("AvgVolume"), metrics.get("BaselineAvgVolume")
+    if avg_vol is not None or base_vol is not None:
+        pct = ((avg_vol - base_vol) / base_vol * 100) if (
+            isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float)) and base_vol) else None
+        diff = (avg_vol - base_vol) if (isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float))) else None
+        parts.append(
+            "<table class='compare'><tr><th></th><th class='num'>Avg volume</th></tr>"
+            f"<tr><td>Baseline</td><td class='num'>{_fmt_num(base_vol)}</td></tr>"
+            f"<tr><td>This window</td><td class='num'>{_fmt_num(avg_vol)}</td></tr>"
+            f"<tr><td>Change</td><td class='num'>{_fmt_signed(diff, ',.0f')} "
+            f"({_fmt_signed(pct, '.1f')}%)</td></tr>"
+            "</table>"
+            "<p class='note'>This one genuinely does compare against the baseline - "
+            "triggers when this window's average exceeds the baseline average x a configured multiplier.</p>")
+    else:
+        parts.append("<p class='note'>No volume data for this instrument.</p>")
+
+    # --- Baseline snapshot: reference only, not live-compared for price/volatility ---
+    baseline_price = metrics.get("BaselinePrice")
+    if baseline_price is None:
+        parts.append(
+            "<h3>Baseline</h3>"
+            "<p class='note'>No baseline recorded yet - either this is genuinely the first check "
+            "ever, or the Workflow Service restarted since the last one (its state has no persistent "
+            "storage, so a redeploy resets it). The next successful check sets a fresh baseline.</p>")
+    else:
+        parts.append(
+            "<h3>Baseline (reference only)</h3>"
+            f"<table><tr><th>Recorded at</th><td>{_fmt_dt(metrics.get('BaselineTimestamp'))}</td></tr>"
+            f"<tr><th>Price then</th><td>{_fmt_price(baseline_price)}</td></tr>"
+            f"<tr><th>Volatility then</th><td>{_fmt_pct(metrics.get('BaselineAvgVolatilityPercent'))}</td></tr>"
+            "</table>"
+            "<p class='note'>From when this baseline was last set (i.e. the last time Price move/"
+            "Volatility/Volume triggered a real Claude call) - shown for context, not compared "
+            "against directly for Price move or Volatility above.</p>")
+
+    return "".join(parts)
+
+
 def _candles_payload(entry):
     """(candles list, candles_json, baseline_price_json) for one tick -
     shared by the main page (latest tick) and the per-tick detail page
@@ -121,6 +227,15 @@ def _candles_payload(entry):
 # candles/baseline data _candles_payload() produces, draws axis labels,
 # a current-price marker, and (if given) a dashed baseline reference line.
 CHART_JS_FN = """
+function niceAxisStep(roughStep) {
+  const mag = Math.pow(10, Math.floor(Math.log10(roughStep)));
+  const residual = roughStep / mag;
+  if (residual > 5) return 10 * mag;
+  if (residual > 2) return 5 * mag;
+  if (residual > 1) return 2 * mag;
+  return mag;
+}
+
 function drawMarketChart(canvasId, candles, baselinePrice) {
   const c = document.getElementById(canvasId);
   if (!c || candles.length < 2 || !c.getContext) return;
@@ -133,24 +248,32 @@ function drawMarketChart(canvasId, candles, baselinePrice) {
 
   const vals = candles.map(k => (k.CloseBid + k.CloseAsk) / 2);
   const padL = 62, padR = 10, padT = 10, padB = 20;
-  let min = Math.min(...vals), max = Math.max(...vals);
-  if (baselinePrice !== null) { min = Math.min(min, baselinePrice); max = Math.max(max, baselinePrice); }
-  if (max === min) { max += 1; min -= 1; }
+  let dataMin = Math.min(...vals), dataMax = Math.max(...vals);
+  if (baselinePrice !== null) { dataMin = Math.min(dataMin, baselinePrice); dataMax = Math.max(dataMax, baselinePrice); }
+  if (dataMax === dataMin) { dataMax += 1; dataMin -= 1; }
+
+  // "Nice" round-number gridlines (Heckbert's algorithm) instead of just
+  // labelling the two data endpoints - a real scale needs an even step,
+  // not just "here's the top and bottom value".
+  const step = niceAxisStep((dataMax - dataMin) / 4);
+  const min = Math.floor(dataMin / step) * step;
+  const max = Math.ceil(dataMax / step) * step;
+  const decimals = Math.max(0, -Math.floor(Math.log10(step)));
+  const ticks = [];
+  for (let v = min; v <= max + step / 2; v += step) ticks.push(v);
 
   const x = i => padL + (i / (vals.length - 1)) * (cssW - padL - padR);
   const y = v => cssH - padB - ((v - min) / (max - min)) * (cssH - padT - padB);
 
   const muted = getComputedStyle(document.body).color;
-  ctx.strokeStyle = muted; ctx.globalAlpha = .25; ctx.lineWidth = 1;
-  [min, max].forEach(v => {
-    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(cssW - padR, y(v)); ctx.stroke();
-  });
-  ctx.globalAlpha = 1;
-
-  ctx.fillStyle = muted; ctx.textBaseline = 'middle';
+  ctx.textBaseline = 'middle';
   ctx.textAlign = 'right';
-  ctx.fillText(max.toFixed(4), padL - 8, y(max));
-  ctx.fillText(min.toFixed(4), padL - 8, y(min));
+  ticks.forEach(v => {
+    ctx.strokeStyle = muted; ctx.globalAlpha = .18; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y(v)); ctx.lineTo(cssW - padR, y(v)); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.fillStyle = muted;
+    ctx.fillText(v.toFixed(decimals), padL - 8, y(v));
+  });
 
   if (baselinePrice !== null) {
     ctx.save();
@@ -305,7 +428,11 @@ table {{ width: 100%; border-collapse: collapse; font-size: .85rem; margin-botto
 th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(127,127,127,.18); }}
 td.num {{ font-variant-numeric: tabular-nums; }}
 th {{ width: 40%; opacity: .7; font-weight: 600; }}
+table.compare th {{ width: auto; opacity: 1; }}
+table.compare td.num, table.compare th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 h2 {{ font-size: .95rem; margin: 20px 0 8px; }}
+h3 {{ font-size: .85rem; margin: 16px 0 6px; opacity: .85; }}
+.note {{ font-size: .78rem; opacity: .65; margin: -8px 0 14px; }}
 pre {{ white-space: pre-wrap; word-break: break-word; font-size: .8rem;
   background: rgba(127,127,127,.1); padding: 10px 12px; border-radius: 8px; }}
 </style></head><body>
@@ -315,6 +442,7 @@ pre {{ white-space: pre-wrap; word-break: break-word; font-size: .8rem;
 <table>
 {metric_rows}
 </table>
+{trigger_detail}
 {signal_block}
 </body></html>"""
 
@@ -416,7 +544,7 @@ def render_tick_page(ts):
                   if e.get("receivedAt") == ts), None)
     if entry is None:
         return TICK_PAGE.format(
-            ts="not found", chart_block="",
+            ts="not found", chart_block="", trigger_detail="",
             metric_rows="<tr><td colspan='2'>That check has aged out of history "
                         "(bounded to the most recent 500) or the link is stale.</td></tr>",
             signal_block="")
@@ -430,14 +558,7 @@ def render_tick_page(ts):
         ("Status", html.escape(str(status or "?"))),
         ("Triggered", "yes" if triggered else "no"),
         ("Reasons", html.escape(reasons)),
-        ("Price move", _fmt_pct(metrics.get("PriceMovePercent"))),
-        ("Volatility", _fmt_pct(metrics.get("AvgVolatilityPercent"))),
-        ("Avg volume", _fmt_num(metrics.get("AvgVolume"))),
-        ("Baseline price", metrics.get("BaselinePrice") if metrics.get("BaselinePrice") is not None else "—"),
-        ("Baseline avg volume", _fmt_num(metrics.get("BaselineAvgVolume"))),
-        ("Baseline set at", _fmt_dt(metrics.get("BaselineTimestamp"))),
-        ("Baseline avg volatility", _fmt_pct(metrics.get("BaselineAvgVolatilityPercent"))),
-        ("Last triggered", _fmt_dt(metrics.get("LastTriggered"))),
+        ("Last triggered before this", _fmt_dt(metrics.get("LastTriggered"))),
     ]
     # Token usage/cost - only ever present on a Completed (billed) tick, and
     # only once the Workflow Service actually reports them; absent today,
@@ -464,11 +585,13 @@ def render_tick_page(ts):
     caption = (f"{len(candles)} candles for this check" if len(candles) > 1
                else "No candle data on this check.")
     chart_block = _render_chart_block(entry, caption)
+    trigger_detail = _render_trigger_detail(entry)
 
     return TICK_PAGE.format(
         ts=html.escape(_fmt_dt(entry.get("RunAt")) if entry.get("RunAt") else
                        time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))),
-        chart_block=chart_block, metric_rows=metric_rows, signal_block=signal_block)
+        chart_block=chart_block, metric_rows=metric_rows,
+        trigger_detail=trigger_detail, signal_block=signal_block)
 
 
 # Seeded from published pricing at the time this was written - not fetched
