@@ -81,9 +81,25 @@ below to the exact service name (HA Developer Tools → **Actions** →
 search `notify`) and pushes start working. Until it's set, pushes are
 silently skipped — everything else still works.
 
+## Tick detail
+
+Click any row's time in **Recent ticks** for that tick's full data — every
+`TriggerMetrics` field, not just the four summarized in the table, plus
+that tick's own candle chart. If it was a real (billed) run, the Claude
+question/answer and (once the Workflow Service reports it) token counts
+and an estimated cost show up here too. Nothing new is collected for
+this — the full payload was already being persisted per tick, this just
+exposes it.
+
+Cost is estimated locally from a small rate table keyed by model name,
+not fetched from Anthropic — there's no API for querying actual account
+balance or cost. An unrecognized model shows "unknown" rather than a
+guessed number; the table needs manual updates if pricing changes.
+
 ## History
 
-`/share/market-agent/log.jsonl`, bounded to the most recent 500 ticks.
+`/share/market-agent/log.jsonl`, bounded to the most recent 500 ticks —
+tick detail pages only work for entries still in that window.
 
 ## Options
 
