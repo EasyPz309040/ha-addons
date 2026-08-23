@@ -144,10 +144,11 @@ h1 {{ font-size: 1.6rem; margin: 0 0 4px; }}
   font-size: .8rem; opacity: .7; margin-bottom: 16px; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 10px; }}
-button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
-  border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12);
+button {{ font: inherit; font-weight: 700; font-size: .85rem; padding: 10px 22px;
+  border-radius: 999px; border: none; background: #039be5; color: #fff;
   cursor: pointer; }}
-button:hover {{ background: rgba(127,127,127,.25); }}
+button:hover {{ background: #0288d1; }}
+.hint {{ font-size: .78rem; opacity: .65; margin: 6px 0 0; }}
 .banner {{ padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
   font-size: .85rem; border: 1px solid rgba(127,127,127,.35);
   background: rgba(127,127,127,.08); }}
@@ -185,8 +186,9 @@ a.pill:hover {{ text-decoration: underline; }}
 </div>
 <p class="chart-caption">{chart_caption}</p>
 <form method="post" action="./run">
-<button type="submit">Run AI Trend Analysis (billed Claude call)</button>
+<button type="submit">Run AI Analysis</button>
 </form>
+<p class="hint">Billed Claude call</p>
 <h2>Recent ticks</h2>
 <table><tr><th>Time</th><th>Status</th><th>Triggered</th><th>Reasons</th>
 <th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
