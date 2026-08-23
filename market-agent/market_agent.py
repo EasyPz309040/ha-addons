@@ -50,6 +50,13 @@ NOTIFY_SERVICE = os.environ.get("NOTIFY_SERVICE", "").strip()
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
 TOPIC = "marketagent.preview"
+# Saxo-owned, not marketagent-owned - matches the Workflow Service's own
+# topic-prefix-as-owner convention. Pushed the moment SaxoAuthService's
+# token state actually changes (login, a real refresh, or once at its
+# own startup) - not tied to marketagent.preview's 5-minute poll cadence
+# at all, which is what makes the Saxo pill react immediately to a login
+# instead of waiting for the next preview tick.
+AUTH_TOPIC = "saxo.authstatus"
 HUB_URL = f"http://{XWEB_HOST}/streamHub"
 # Fallback chain, used only until the Workflow Service's own broadcast
 # carries a PublicLoginUrl (see _public_login_url below - that's the
@@ -80,6 +87,23 @@ def login_url():
     """
     with _public_login_url_lock:
         return _public_login_url or _SAXO_LOGIN_URL_FALLBACK
+
+
+_last_saxo_auth_status = None  # latest saxo.authstatus payload, if any have arrived yet
+_saxo_auth_status_lock = threading.Lock()
+
+
+def saxo_auth_status():
+    """The latest saxo.authstatus push, or None if none has arrived yet
+    (an older Workflow Service without this topic, or just not received
+    one this run). ui.py prefers this for the Saxo pill when present,
+    falling back to inferring it from the last marketagent.preview tick's
+    Status otherwise - same defensive fields-may-be-absent pattern as
+    PublicLoginUrl and the trigger threshold fields.
+    """
+    with _saxo_auth_status_lock:
+        return _last_saxo_auth_status
+
 
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"
@@ -218,20 +242,53 @@ def latest():
     return h[-1] if h else None
 
 
+def _update_public_login_url(url):
+    if not url:
+        return
+    global _public_login_url
+    with _public_login_url_lock:
+        _public_login_url = url
+
+
+def _handle_saxo_auth_signal(required):
+    """Login-required/resolved notification, deduped on transition.
+
+    Single source of truth for last_saxo_auth_required so that the
+    marketagent.preview topic's own SaxoAuthRequired status and the
+    saxo.authstatus push - which can report the same transition
+    independently, sometimes within moments of each other - can't
+    double-notify. Self-locking: callers must NOT already hold
+    _state_lock.
+    """
+    with _state_lock:
+        state = _read_state()
+        if required and not state.get("last_saxo_auth_required"):
+            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
+        elif state.get("last_saxo_auth_required") and not required:
+            notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
+        state["last_saxo_auth_required"] = required
+        _write_state(state)
+
+
 def _on_data(args):
-    # signalrcore hands invocation args as a plain list; StreamHub
-    # broadcasts SendAsync("onData", topic, json, ct) - two arguments.
+    # signalrcore hands invocation args as a plain list; both topics
+    # broadcast SendAsync("onData", topic, json, ct) - two arguments,
+    # dispatched here by topic.
     try:
         topic, payload = args[0], args[1]
     except (IndexError, TypeError):
-        return
-    if topic != TOPIC:
         return
     try:
         result = json.loads(payload)
     except ValueError:
         return
+    if topic == TOPIC:
+        _on_preview_data(result)
+    elif topic == AUTH_TOPIC:
+        _on_auth_status_data(result)
 
+
+def _on_preview_data(result):
     entry = dict(result)
     entry["receivedAt"] = time.time()
     _append(entry)
@@ -252,21 +309,11 @@ def _on_data(args):
     metrics = result.get("Metrics") or {}
     triggered = bool(metrics.get("Triggered"))
 
-    public_login_url = result.get("PublicLoginUrl")
-    if public_login_url:
-        global _public_login_url
-        with _public_login_url_lock:
-            _public_login_url = public_login_url
+    _update_public_login_url(result.get("PublicLoginUrl"))
+    _handle_saxo_auth_signal(saxo_auth_required)
 
     with _state_lock:
         state = _read_state()
-
-        if saxo_auth_required and not state.get("last_saxo_auth_required"):
-            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
-        elif state.get("last_saxo_auth_required") and not saxo_auth_required:
-            notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
-        state["last_saxo_auth_required"] = saxo_auth_required
-
         # A SaxoAuthRequired tick carries no metrics at all - don't let a
         # stale "still triggered" state silently persist through however
         # many auth-required ticks happen before someone logs back in.
@@ -276,8 +323,22 @@ def _on_data(args):
                 notify("Market Agent",
                        f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
             state["last_triggered"] = triggered
-
         _write_state(state)
+
+
+def _on_auth_status_data(result):
+    """saxo.authstatus - see AUTH_TOPIC's own comment for why this
+    exists. Also PascalCase (SaxoAuthStatus in Model.Core, same
+    JsonConvert.SerializeObject as marketagent.preview).
+    """
+    entry = dict(result)
+    entry["receivedAt"] = time.time()
+    global _last_saxo_auth_status
+    with _saxo_auth_status_lock:
+        _last_saxo_auth_status = entry
+
+    _update_public_login_url(result.get("PublicLoginUrl"))
+    _handle_saxo_auth_signal(not result.get("Authenticated"))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -382,11 +443,13 @@ def _connect_once():
         # first, since group membership doesn't survive a reconnect
         # either.
         hub.send("Subscribe", [TOPIC])
+        hub.send("Subscribe", [AUTH_TOPIC])
         # RequestLatest still matters even with a real subscription: it's
         # what makes the panel show a value immediately on connect rather
-        # than waiting up to MarketAgent:PollingIntervalMinutes for the
-        # next tick.
+        # than waiting on the next push of either topic - marketagent.preview's
+        # 5-minute poll, or saxo.authstatus's next login/refresh event.
         hub.send("RequestLatest", [TOPIC])
+        hub.send("RequestLatest", [AUTH_TOPIC])
 
     def _on_close():
         _set_connection_state("disconnected")

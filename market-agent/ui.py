@@ -49,6 +49,29 @@ CONNECTION_PILLS = {
 }
 
 
+def _saxo_pill(entries):
+    """Prefers the saxo.authstatus push - pushed the instant a login or
+    refresh actually happens, not tied to marketagent.preview's 5-minute
+    poll cadence at all. Falls back to inferring it from the latest
+    preview tick's own Status (the old, laggier signal) only if no
+    saxo.authstatus has arrived yet - an older Workflow Service without
+    this topic, or just not received one this run - same
+    defensive-fields-may-be-absent pattern as PublicLoginUrl and the
+    trigger threshold fields.
+    """
+    status = market_agent.saxo_auth_status()
+    if status is not None:
+        return ("pill-ok", "Saxo: connected") if status.get("Authenticated") \
+            else ("pill-warn", "Saxo: login required")
+
+    latest_status = entries[-1].get("Status") if entries else None
+    if latest_status is None:
+        return "pill-unknown", "Saxo: unknown"
+    if latest_status == "SaxoAuthRequired":
+        return "pill-warn", "Saxo: login required"
+    return "pill-ok", "Saxo: connected"
+
+
 def _relative_time(ts):
     if not ts:
         return "never"
@@ -699,12 +722,7 @@ def render_page(notice=None, good=True):
         banner = "<div class='banner'>No checks received yet - waiting on market agent workflow service's first broadcast.</div>"
 
     latest_status = entries[-1].get("Status") if entries else None
-    if latest_status is None:
-        saxo_pill_cls, saxo_pill_text = "pill-unknown", "Saxo: unknown"
-    elif latest_status == "SaxoAuthRequired":
-        saxo_pill_cls, saxo_pill_text = "pill-warn", "Saxo: login required"
-    else:
-        saxo_pill_cls, saxo_pill_text = "pill-ok", "Saxo: connected"
+    saxo_pill_cls, saxo_pill_text = _saxo_pill(entries)
 
     conn_pill_cls, conn_pill_text = CONNECTION_PILLS.get(
         market_agent.connection_status(), ("pill-unknown", "Workflow Service: unknown"))

@@ -77,6 +77,16 @@ A colored pill next to the symbol shows whether the Workflow Service
 currently has a valid Saxo session — green "Saxo: connected", red "Saxo:
 login required", or grey "Saxo: unknown" before the first check arrives.
 
+This is pushed from its own dedicated `saxo.authstatus` SignalR topic,
+separate from `marketagent.preview` — it fires the moment a login or
+token refresh actually happens on the Workflow Service side, not on the
+preview loop's 5-minute cadence. That's what makes the pill (and the
+login-required/resolved push notification) react within moments of
+logging in rather than waiting for the next scheduled check. Older
+Workflow Service versions without this topic fall back to inferring the
+pill from the latest preview check's own status — laggier, but still
+correct.
+
 Clicking the pill doesn't send your browser to the Workflow Service
 directly — it hits this add-on's own `/saxo-login` route, which asks the
 Workflow Service server-side (from HAOS, a normal LAN device) where the
