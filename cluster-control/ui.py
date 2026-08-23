@@ -149,7 +149,7 @@ _lock = threading.Lock()
 
 def playbook_dir():
     try:
-        return Path(DIRFILE.read_text().strip())
+        return Path(DIRFILE.read_text(encoding="utf-8").strip())
     except OSError:
         return None
 
@@ -195,7 +195,7 @@ def running():
             fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             try:
-                return json.loads(STATUS.read_text())
+                return json.loads(STATUS.read_text(encoding="utf-8"))
             except Exception:
                 return {"playbook": "unknown", "check": False}
         else:
@@ -214,7 +214,7 @@ def recent_logs(limit=8):
         rc = "?"
         tail = ""
         try:
-            tail = f.read_text(errors="replace")[-4000:]
+            tail = f.read_text(encoding="utf-8", errors="replace")[-4000:]
             m = re.findall(r"finished \(exit (\d+)\)", tail)
             if m:
                 rc = m[-1]
@@ -230,7 +230,7 @@ def log_text(name, tail_bytes=60000):
     if not f.is_file() or f.parent != LOGDIR:
         return "Log not found."
     try:
-        return f.read_text(errors="replace")[-tail_bytes:]
+        return f.read_text(encoding="utf-8", errors="replace")[-tail_bytes:]
     except OSError as e:
         return f"Could not read log: {e}"
 
@@ -281,6 +281,182 @@ def render_preview_summary(name, summary):
             + html.escape(", ".join(unreachable)) + "</p>")
     parts.append(f"<p><a href='./log?name={html.escape(name)}'>View full log</a></p>")
     return "<div class='card summary'><div class='txt'>" + "".join(parts) + "</div></div>"
+
+
+# --- DOCS.md renderer -------------------------------------------------
+# Hand-rolled, not a pip dependency (this add-on has none, deliberately -
+# see CLAUDE.md). Covers only what DOCS.md actually uses: headers, bold,
+# inline code, fenced code blocks, tables, unordered lists, blockquotes,
+# links - not a general CommonMark implementation.
+
+_MD_CODE_RE = re.compile(r'`([^`]+)`')
+_MD_BOLD_RE = re.compile(r'\*\*([^*]+)\*\*')
+_MD_LINK_RE = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+_MD_HEADER_RE = re.compile(r'^(#{1,4})\s+(.*)')
+
+
+def _md_inline(text):
+    """Inline formatting within one block of text. html.escape() first -
+    none of the markdown delimiters this covers (`*[]()) are HTML-special,
+    so escaping first and matching after is safe. Code and links are
+    stashed behind placeholders before the bold pass, so **bold** inside
+    a link's visible text or an asterisk inside `code` isn't misread as
+    emphasis syntax.
+    """
+    text = html.escape(text)
+    stash = []
+
+    def _put(frag):
+        stash.append(frag)
+        return f"\x00{len(stash) - 1}\x00"
+
+    def _link(m):
+        url, label = m.group(2), m.group(1)
+        # In-page fragment links (e.g. "see Running on demand" below) should
+        # scroll the same tab, not pointlessly open a new one - only actual
+        # external URLs get target="_blank".
+        attrs = "" if url.startswith("#") else ' target="_blank" rel="noopener noreferrer"'
+        return _put(f'<a href="{url}"{attrs}>{label}</a>')
+
+    text = _MD_CODE_RE.sub(lambda m: _put(f"<code>{m.group(1)}</code>"), text)
+    text = _MD_LINK_RE.sub(_link, text)
+    text = _MD_BOLD_RE.sub(lambda m: f"<b>{m.group(1)}</b>", text)
+    for i, frag in enumerate(stash):
+        text = text.replace(f"\x00{i}\x00", frag)
+    return text
+
+
+def _md_slugify(raw_heading_text):
+    """GitHub-style heading slug, for #fragment links within DOCS.md to
+    actually land somewhere. Strips markdown emphasis/code markers first -
+    slugify the raw "`run-command.yml` cookbook" text, not its rendered
+    <code> HTML.
+    """
+    text = re.sub(r'[`*]', '', raw_heading_text).lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    return re.sub(r'\s+', '-', text.strip())
+
+
+def _md_table(lines):
+    def cells(line):
+        return [c.strip() for c in line.strip().strip("|").split("|")]
+    header = cells(lines[0])
+    body = lines[2:] if len(lines) > 1 else []  # lines[1] is the --- separator row
+    out = ["<table>", "<tr>" + "".join(f"<th>{_md_inline(c)}</th>" for c in header) + "</tr>"]
+    for line in body:
+        out.append("<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in cells(line)) + "</tr>")
+    out.append("</table>")
+    return "".join(out)
+
+
+def render_markdown(text):
+    lines = text.split("\n")
+    out = []
+    para = []
+    in_list = [False]  # mutable cell so the nested closures below can flip it
+
+    def flush_para():
+        if para:
+            out.append("<p>" + _md_inline(" ".join(para)) + "</p>")
+            para.clear()
+
+    def close_list():
+        if in_list[0]:
+            out.append("</ul>")
+            in_list[0] = False
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("```"):
+            flush_para(); close_list()
+            i += 1
+            code = []
+            while i < len(lines) and not lines[i].startswith("```"):
+                code.append(lines[i]); i += 1
+            out.append("<pre><code>" + html.escape("\n".join(code)) + "</code></pre>")
+            i += 1
+            continue
+
+        m = _MD_HEADER_RE.match(line)
+        if m:
+            flush_para(); close_list()
+            level = len(m.group(1))
+            slug = _md_slugify(m.group(2))
+            out.append(f'<h{level} id="{slug}">{_md_inline(m.group(2))}</h{level}>')
+            i += 1
+            continue
+
+        if line.startswith(">"):
+            flush_para(); close_list()
+            quote = []
+            while i < len(lines) and lines[i].startswith(">"):
+                quote.append(lines[i].lstrip(">").strip())
+                i += 1
+            out.append("<blockquote>" + _md_inline(" ".join(quote)) + "</blockquote>")
+            continue
+
+        if line.startswith("|"):
+            flush_para(); close_list()
+            table = []
+            while i < len(lines) and lines[i].startswith("|"):
+                table.append(lines[i]); i += 1
+            out.append(_md_table(table))
+            continue
+
+        if line.startswith("- "):
+            flush_para()
+            if not in_list[0]:
+                out.append("<ul>")
+                in_list[0] = True
+            out.append("<li>" + _md_inline(line[2:]) + "</li>")
+            i += 1
+            continue
+
+        if not line.strip():
+            flush_para(); close_list()
+            i += 1
+            continue
+
+        para.append(line)
+        i += 1
+
+    flush_para(); close_list()
+    return "\n".join(out)
+
+
+DOCS_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport"
+content="width=device-width,initial-scale=1"><title>Cluster Control - Docs</title>
+<style>
+{font_face}
+:root {{ color-scheme: light dark; }}
+body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; padding: 16px 20px 40px; max-width: 780px; margin-inline: auto; }}
+h1, h2, h3, h4 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.3; }}
+h1 {{ font-size: 1.5rem; }}
+h2 {{ font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid rgba(127,127,127,.3); padding-bottom: .3rem; }}
+h3 {{ font-size: 1rem; margin-top: 1.5rem; }}
+h4 {{ font-size: .9rem; }}
+p, li {{ line-height: 1.55; font-size: .88rem; }}
+a {{ color: inherit; }}
+code {{ font-size: .82em; background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 4px; }}
+pre {{ background: rgba(127,127,127,.1); padding: 12px 14px; border-radius: 8px;
+  overflow-x: auto; }}
+pre code {{ background: none; padding: 0; }}
+blockquote {{ margin: 0; padding: .6rem 1rem; border-left: 3px solid rgba(127,127,127,.4);
+  background: rgba(127,127,127,.08); border-radius: 0 6px 6px 0; font-size: .85rem; }}
+table {{ border-collapse: collapse; width: 100%; font-size: .82rem; margin: .5rem 0; }}
+th, td {{ text-align: left; padding: 5px 10px; border-bottom: 1px solid rgba(127,127,127,.2); }}
+th {{ opacity: .7; text-transform: uppercase; font-size: .72rem; letter-spacing: .04em; }}
+ul {{ padding-left: 1.2rem; }}
+.back {{ font-size: .85rem; }}
+</style></head><body>
+<p class="back"><a href="./">&larr; back</a></p>
+{content}
+</body></html>"""
 
 
 PAGE = """<!doctype html>
@@ -368,16 +544,10 @@ class Handler(BaseHTTPRequestHandler):
                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
         if p.endswith("/docs"):
             try:
-                text = DOCS_PATH.read_text(errors="replace")
+                text = DOCS_PATH.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 text = "DOCS.md not found in this image."
-            body = ("<!doctype html><meta charset='utf-8'>"
-                    "<style>body{font-family:system-ui;padding:16px;max-width:780px;margin:0 auto}"
-                    "pre{white-space:pre-wrap;word-break:break-word;font-size:.8rem;"
-                    "background:rgba(127,127,127,.1);padding:12px;border-radius:8px}"
-                    "</style><p><a href='./'>&larr; back</a></p><pre>"
-                    + html.escape(text) + "</pre>")
-            return self._send(body)
+            return self._send(DOCS_PAGE.format(font_face=FONT_FACE, content=render_markdown(text)))
         if p.endswith("/log"):
             name = ""
             if "?" in self.path:
