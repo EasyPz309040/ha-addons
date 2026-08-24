@@ -185,10 +185,11 @@ def _reason_status(name, metrics):
     return "over threshold" if name in reasons else "under threshold"
 
 
-def _measure_card(label, value_text, sub_text, extra_cls=""):
+def _measure_card(label, value_text, sub_text, extra_cls="", spark_html=""):
     cls = f"measure-card {extra_cls}".strip()
     return (f"<div class='{cls}'><div class='measure-label'>{html.escape(label)}</div>"
             f"<div class='measure-value'>{value_text}</div>"
+            f"{spark_html}"
             f"<div class='measure-sub'>{sub_text}</div></div>")
 
 
@@ -201,28 +202,74 @@ def _measure_status_cls(name, metrics):
     return ""
 
 
-def _render_measure_cards(entry):
+def _measure_points(history, field):
+    """Up to the last 12 checks' worth of `field`, oldest first, each
+    tagged 'dim' if that check's Reasons included FirstRun - a real
+    computed number either way, just never actually compared against a
+    threshold, so the sparkline fades it rather than implying a real
+    "under threshold" result happened.
+    """
+    points = []
+    for e in history[-12:]:
+        m = e.get("Metrics") or {}
+        v = m.get(field)
+        if isinstance(v, (int, float)):
+            points.append({"v": v, "dim": "FirstRun" in (m.get("Reasons") or [])})
+    return points
+
+
+def _measure_spark(history, field, threshold, uid, name):
+    """(canvas HTML, draw-call JS) for one measure's tiny trend line, or
+    ("", "") if there isn't enough recent history to make a line
+    meaningful yet. Self-contained per card (own <script>, own copy of
+    CHART_JS_FN) rather than relying on another script block elsewhere on
+    the page having already run first - same reasoning _render_chart_block
+    already uses, since not every page is guaranteed to have a main chart
+    block at all (e.g. a check with no candle data).
+    """
+    points = _measure_points(history, field)
+    if len(points) < 2:
+        return "", ""
+    canvas_id = f"spark-{name}-{uid}"
+    canvas_html = f"<canvas id='{canvas_id}' class='measure-spark'></canvas>"
+    js = f"drawSparkline('{canvas_id}', {json.dumps(points)}, {json.dumps(threshold)});"
+    return canvas_html, js
+
+
+def _render_measure_cards(entry, history):
     """Three measures, side by side, each labelled with what it's actually
-    compared against - a compact dashboard view of the same distinction
-    _render_trigger_detail's fuller tables make explicit. Shared by the
-    main page (latest check, under the chart) and the workflow-detail page
-    (top of "How this was evaluated") so the two never drift apart.
+    compared against, plus a tiny trend line across the last ~12 checks -
+    a compact dashboard view of the same distinction _render_trigger_detail's
+    fuller tables make explicit. Shared by the main page (latest check,
+    under the chart) and the workflow-detail page (top of "How this was
+    evaluated") so the two never drift apart. `history` is the chronological
+    (oldest-first) list of checks ending at-or-before `entry`, used only for
+    the sparklines - the big value/status text still comes from `entry` alone.
     """
     metrics = entry.get("Metrics") or {}
+    uid = int(entry.get("receivedAt", 0) * 1000)
+    spark_js_parts = []
 
     def pct_sub(measured, threshold, name):
         if threshold is None:
             return "threshold not reported yet"
         return f"of {_fmt_pct(threshold)} · {_reason_status(name, metrics)}"
 
+    price_spark_html, price_spark_js = _measure_spark(
+        history, "PriceMovePercent", metrics.get("PriceMoveThresholdPercent"), uid, "pricemove")
+    spark_js_parts.append(price_spark_js)
     price_card = _measure_card(
         "Price move", _fmt_pct(metrics.get("PriceMovePercent")),
         pct_sub(metrics.get("PriceMovePercent"), metrics.get("PriceMoveThresholdPercent"), "PriceMove"),
-        _measure_status_cls("PriceMove", metrics))
+        _measure_status_cls("PriceMove", metrics), price_spark_html)
+
+    vol_spark_html, vol_spark_js = _measure_spark(
+        history, "AvgVolatilityPercent", metrics.get("VolatilityThresholdPercent"), uid, "volatility")
+    spark_js_parts.append(vol_spark_js)
     vol_card = _measure_card(
         "Volatility", _fmt_pct(metrics.get("AvgVolatilityPercent")),
         pct_sub(metrics.get("AvgVolatilityPercent"), metrics.get("VolatilityThresholdPercent"), "Volatility"),
-        _measure_status_cls("Volatility", metrics))
+        _measure_status_cls("Volatility", metrics), vol_spark_html)
 
     avg_vol = metrics.get("AvgVolume")
     base_vol = metrics.get("BaselineAvgVolume")
@@ -230,17 +277,25 @@ def _render_measure_cards(entry):
     if isinstance(base_vol, (int, float)) and isinstance(multiplier, (int, float)):
         volume_sub = (f"of {_fmt_num(base_vol * multiplier)} ({multiplier:g}× baseline) "
                        f"· {_reason_status('Volume', metrics)}")
+        volume_threshold = base_vol * multiplier
     elif isinstance(base_vol, (int, float)):
         volume_sub = f"baseline {_fmt_num(base_vol)} · multiplier not reported yet"
+        volume_threshold = None
     else:
         volume_sub = "no baseline yet"
+        volume_threshold = None
+    volume_spark_html, volume_spark_js = _measure_spark(
+        history, "AvgVolume", volume_threshold, uid, "volume")
+    spark_js_parts.append(volume_spark_js)
     volume_card = _measure_card(
-        "Volume", _fmt_num(avg_vol), volume_sub, _measure_status_cls("Volume", metrics))
+        "Volume", _fmt_num(avg_vol), volume_sub, _measure_status_cls("Volume", metrics), volume_spark_html)
 
-    return f"<div class='measures'>{price_card}{vol_card}{volume_card}</div>"
+    spark_js = "".join(p for p in spark_js_parts if p)
+    script_block = f"<script>{CHART_JS_FN}\n{spark_js}</script>" if spark_js else ""
+    return f"<div class='measures'>{price_card}{vol_card}{volume_card}</div>{script_block}"
 
 
-def _render_trigger_detail(entry):
+def _render_trigger_detail(entry, history):
     """Price move and Volatility are computed *within this window itself*
     (first candle vs last, and the window's own high-low range) against a
     fixed threshold - NOT a comparison to the stored baseline, however
@@ -254,7 +309,7 @@ def _render_trigger_detail(entry):
     metrics = entry.get("Metrics") or {}
     candles = entry.get("EvalCandles") or []
 
-    parts = ["<h2>How this was evaluated</h2>", _render_measure_cards(entry)]
+    parts = ["<h2>How this was evaluated</h2>", _render_measure_cards(entry, history)]
 
     # --- Price move: window-internal, first candle vs last candle ---
     parts.append("<h3>Price move — window detail</h3>")
@@ -475,6 +530,53 @@ function drawMarketChart(canvasId, candles, baselinePrice) {
     ctx.fillText(label, px, cssH - 4);
   });
 }
+
+// Tiny inline trend line for one measure-card - recent values only, no
+// axis/labels at all (kept deliberately minimal so the card doesn't grow).
+// `points` is [{v, dim}], oldest first - dim marks a check that was never
+// actually compared against a threshold (FirstRun), drawn faded rather
+// than looking like a real "under threshold" result. `threshold`, if not
+// null, draws as a flat dashed reference line so "how close" is visible
+// at a glance.
+function drawSparkline(canvasId, points, threshold) {
+  const c = document.getElementById(canvasId);
+  if (!c || points.length < 2 || !c.getContext) return;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = c.clientWidth || 120, cssH = 28, padY = 3;
+  c.width = cssW * dpr; c.height = cssH * dpr;
+  ctx.scale(dpr, dpr);
+
+  const vals = points.map(p => p.v);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (threshold !== null) { min = Math.min(min, threshold); max = Math.max(max, threshold); }
+  if (max === min) { max += 1; min -= 1; }
+  const x = i => (i / (points.length - 1)) * cssW;
+  const y = v => cssH - padY - ((v - min) / (max - min)) * (cssH - padY * 2);
+
+  if (threshold !== null) {
+    ctx.strokeStyle = '#b26a00'; ctx.globalAlpha = .5; ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(0, y(threshold)); ctx.lineTo(cssW, y(threshold)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.lineWidth = 1.4;
+  for (let i = 1; i < points.length; i++) {
+    ctx.strokeStyle = '#4a90d9';
+    ctx.globalAlpha = (points[i].dim || points[i - 1].dim) ? .3 : .9;
+    ctx.beginPath();
+    ctx.moveTo(x(i - 1), y(points[i - 1].v));
+    ctx.lineTo(x(i), y(points[i].v));
+    ctx.stroke();
+  }
+
+  const lastIdx = points.length - 1;
+  ctx.globalAlpha = points[lastIdx].dim ? .5 : 1;
+  ctx.fillStyle = '#4a90d9';
+  ctx.beginPath(); ctx.arc(x(lastIdx), y(points[lastIdx].v), 2, 0, 7); ctx.fill();
+  ctx.globalAlpha = 1;
+}
 """
 
 
@@ -554,6 +656,7 @@ canvas {{ width: 100%; height: 220px; display: block; }}
 .measure-card.hit {{ border-color: #b26a00; background: rgba(178,106,0,.1); }}
 .measure-label {{ font-size: .72rem; opacity: .65; text-transform: uppercase; letter-spacing: .04em; }}
 .measure-value {{ font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 2px 0; }}
+.measure-spark {{ width: 100%; height: 28px; display: block; margin: 2px 0; }}
 .measure-sub {{ font-size: .74rem; opacity: .7; }}
 .ai-result .note {{ font-size: .78rem; opacity: .65; margin: 0 0 8px; }}
 .ai-result pre {{ white-space: pre-wrap; word-break: break-word; font-size: .82rem;
@@ -595,7 +698,7 @@ a.pill:hover {{ text-decoration: underline; }}
 <div class="card">
 <h2>AI Analysis</h2>
 <div class="run-row">
-<form method="post" action="./run"><button type="submit">Run AI Analysis</button></form>
+<form method="post" action="./run"><button type="submit">Run AI Trend Analysis</button></form>
 <span class="hint">Billed Claude call</span>
 </div>
 <div class="ai-result">
@@ -646,6 +749,7 @@ h3 {{ font-size: .85rem; margin: 16px 0 6px; opacity: .85; }}
 .measure-card.hit {{ border-color: #b26a00; background: rgba(178,106,0,.1); }}
 .measure-label {{ font-size: .72rem; opacity: .65; text-transform: uppercase; letter-spacing: .04em; }}
 .measure-value {{ font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; margin: 2px 0; }}
+.measure-spark {{ width: 100%; height: 28px; display: block; margin: 2px 0; }}
 .measure-sub {{ font-size: .74rem; opacity: .7; }}
 pre {{ white-space: pre-wrap; word-break: break-word; font-size: .8rem;
   background: rgba(127,127,127,.1); padding: 10px 12px; border-radius: 8px; }}
@@ -677,7 +781,7 @@ def _render_chart_block(entry, caption):
 
 def _render_ai_result_block(entry):
     """The most recent *billed* (Completed) run's question/answer, shown
-    directly on the main page under the Run AI Analysis button - not just
+    directly on the main page under the Run AI Trend Analysis button - not just
     on that check's own Workflow detail page. `entry` is the latest
     Completed entry in history, or None if no billed run has happened yet
     (routine Preview/TriggerNotMet/MarketClosed ticks never carry a
@@ -762,7 +866,7 @@ def render_page(notice=None, good=True):
         last_check_when = time.strftime("%H:%M", time.localtime(latest_entry.get("receivedAt", 0)))
         last_check_block = (
             f"<h3 class='section-sub'>Last check — {html.escape(str(latest_status or '?'))} at {last_check_when}</h3>"
-            + _render_measure_cards(latest_entry))
+            + _render_measure_cards(latest_entry, entries))
     else:
         last_check_block = ""
 
@@ -789,8 +893,8 @@ def render_tick_page(ts):
     already carries its own EvalCandles/Metrics in full, this just surfaces
     what was already being persisted rather than collecting anything new.
     """
-    entry = next((e for e in market_agent.history(limit=200)
-                  if e.get("receivedAt") == ts), None)
+    full_history = market_agent.history(limit=200)
+    entry = next((e for e in full_history if e.get("receivedAt") == ts), None)
     if entry is None:
         return TICK_PAGE.format(
             ts="not found", chart_block="", trigger_detail="", font_face=FONT_FACE,
@@ -832,7 +936,8 @@ def render_tick_page(ts):
         signal_block = ""
 
     chart_block = _render_chart_block(entry, _chart_caption(entry, market_agent.SYMBOL))
-    trigger_detail = _render_trigger_detail(entry)
+    history_up_to_entry = [e for e in full_history if e.get("receivedAt", 0) <= ts]
+    trigger_detail = _render_trigger_detail(entry, history_up_to_entry)
 
     return TICK_PAGE.format(
         ts=html.escape(_fmt_dt(entry.get("RunAt")) if entry.get("RunAt") else

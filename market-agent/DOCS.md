@@ -20,7 +20,7 @@ The panel is three cards, top to bottom:
    time) and a bold "market is likely closed" note whenever those candles
    aren't from today, so stale data is never mistaken for live price
    action.
-2. **AI Analysis** — the **Run AI Analysis** button (a real, billed Claude
+2. **AI Analysis** — the **Run AI Trend Analysis** button (a real, billed Claude
    call, on demand) and, underneath it, the most recent *billed* run's
    question and answer — this shows up here automatically the moment one
    happens, whether triggered by the button or by the background loop's
@@ -145,10 +145,19 @@ from the Workflow Service's own `Reasons`, not re-derived here — the same
 consistent pair for all three measures, including Volume, whose "threshold"
 is really the baseline times a configured multiplier). Being over threshold
 only means this measure is one reason **Delta threshold met** is "yes" for
-this check — it does not mean a Claude call happened. Every background-loop
+this check — it does not mean a Claude call happened.
+
+Each card also carries a tiny trend line across the last ~12 checks (about
+an hour, at the default 5-minute cadence), with the threshold as a faint
+dashed reference — a glance at how close things have been running, not
+just this one instant. Segments from a check that was never actually
+evaluated (FirstRun — no baseline yet, so the comparison was skipped, not
+failed) are drawn faded rather than looking like a real result.
+
+Every background-loop
 check is a free preview, never billed (its "Status" is never `Completed` on its
 own); Delta threshold met: yes just says a real analysis *would be worth
-running*. Only the **Run AI Analysis** button actually bills one. Below
+running*. Only the **Run AI Trend Analysis** button actually bills one. Below
 the cards, a fuller breakdown for Price move and Volume: Price move and
 Volatility are each computed *within that check's own lookback window*
 (first candle vs. last, and the window's own high–low range) against a
