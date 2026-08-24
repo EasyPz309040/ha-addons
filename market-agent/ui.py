@@ -163,11 +163,15 @@ def _reason_status(name, metrics):
     """Whether a named measure crossed its own threshold this check,
     straight from Reasons - not re-derived from the raw numbers, since
     Reasons is the Workflow Service's own authoritative answer and
-    re-deriving it here risks a rounding/edge-case mismatch. FirstRun is a
-    special case: the threshold comparisons are skipped entirely that
-    check (no baseline to compare against yet), not just "under threshold"
-    - worth saying so rather than implying a comparison happened when it
-    didn't.
+    re-deriving it here risks a rounding/edge-case mismatch.
+
+    "No baseline yet" is read from BaselinePrice, not from a "FirstRun"
+    tag in Reasons - the Workflow Service only ever sets Reasons to
+    explain why a real trigger fired, so a first-ever check (nothing to
+    compare against) correctly leaves Reasons empty, same as any other
+    check where nothing crossed. BaselinePrice being null is the actual,
+    unambiguous signal that no comparison happened at all - worth saying
+    so rather than implying a comparison happened when it didn't.
 
     Deliberately says "over threshold"/"under threshold" - a consistent,
     self-contained pair reused as-is for all three measures (Price move/
@@ -176,12 +180,12 @@ def _reason_status(name, metrics):
     threshold here just means this measure is one reason Delta threshold
     met is "yes" for this check, not that any Claude call happened. Every
     background-loop check is a free preview, never billed - only the Run
-    AI Analysis button actually calls Claude, so a routine check with
-    Delta threshold met: yes has still triggered nothing on its own.
+    AI Trend Analysis button actually calls Claude, so a routine check
+    with Delta threshold met: yes has still triggered nothing on its own.
     """
-    reasons = metrics.get("Reasons") or []
-    if "FirstRun" in reasons:
+    if metrics.get("BaselinePrice") is None:
         return "not evaluated this check (first check / no baseline yet)"
+    reasons = metrics.get("Reasons") or []
     return "over threshold" if name in reasons else "under threshold"
 
 
@@ -204,17 +208,18 @@ def _measure_status_cls(name, metrics):
 
 def _measure_points(history, field):
     """Up to the last 12 checks' worth of `field`, oldest first, each
-    tagged 'dim' if that check's Reasons included FirstRun - a real
-    computed number either way, just never actually compared against a
-    threshold, so the sparkline fades it rather than implying a real
-    "under threshold" result happened.
+    tagged 'dim' if that check had no baseline yet (BaselinePrice null,
+    same signal _reason_status uses) - a real computed number either way,
+    just never actually compared against a threshold, so the sparkline
+    fades it rather than implying a real "under threshold" result
+    happened.
     """
     points = []
     for e in history[-12:]:
         m = e.get("Metrics") or {}
         v = m.get(field)
         if isinstance(v, (int, float)):
-            points.append({"v": v, "dim": "FirstRun" in (m.get("Reasons") or [])})
+            points.append({"v": v, "dim": m.get("BaselinePrice") is None})
     return points
 
 
