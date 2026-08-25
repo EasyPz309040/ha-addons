@@ -265,7 +265,7 @@ def _handle_saxo_auth_signal(required):
         if required and not state.get("last_saxo_auth_required"):
             notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
         elif state.get("last_saxo_auth_required") and not required:
-            notify("Market Agent", "Saxo re-authenticated - Market Agent back to normal.")
+            notify("Market Agent", "Saxo re-authenticated - Market Agent back online.")
         state["last_saxo_auth_required"] = required
         _write_state(state)
 
