@@ -49,7 +49,7 @@ CONNECTION_PILLS = {
 }
 
 
-def _saxo_pill(entries):
+def _auth_pill(entries):
     """Prefers the saxo.authstatus push - pushed the instant a login or
     refresh actually happens, not tied to marketagent.preview's 5-minute
     poll cadence at all. Falls back to inferring it from the latest
@@ -59,17 +59,17 @@ def _saxo_pill(entries):
     defensive-fields-may-be-absent pattern as PublicLoginUrl and the
     trigger threshold fields.
     """
-    status = market_agent.saxo_auth_status()
+    status = market_agent.auth_status()
     if status is not None:
-        return ("pill-ok", "Saxo: connected") if status.get("Authenticated") \
-            else ("pill-warn", "Saxo: login required")
+        return ("pill-ok", "Auth: connected") if status.get("Authenticated") \
+            else ("pill-warn", "Auth: login required")
 
     latest_status = entries[-1].get("Status") if entries else None
     if latest_status is None:
-        return "pill-unknown", "Saxo: unknown"
+        return "pill-unknown", "Auth: unknown"
     if latest_status == "SaxoAuthRequired":
-        return "pill-warn", "Saxo: login required"
-    return "pill-ok", "Saxo: connected"
+        return "pill-warn", "Auth: login required"
+    return "pill-ok", "Auth: connected"
 
 
 def _relative_time(ts):
@@ -131,7 +131,7 @@ def _fmt_num(v):
 def _fmt_candle_time(s):
     """HH:MM for a candle from today (UTC); prefixes the date otherwise -
     without this, stale candles (e.g. Friday's last session, still shown
-    through a closed weekend because Saxo has nothing newer to return)
+    through a closed weekend because the upstream data source has nothing newer to return)
     read as if they were today's live price action. Confirmed for real
     2026-08-23: EvalCandles was still 2026-08-21 17:00-20:55 on a Sunday,
     with no date shown anywhere, looking exactly like fresh data.
@@ -260,10 +260,11 @@ def _render_measure_cards(entry, history):
 
     # Volume is reported but not part of the trigger any more - it isn't
     # compared against anything, so no threshold, no over/under status, no
-    # "hit" highlighting. Saxo never reports volume at all for OTC/FX-spot
-    # and precious-metals instruments (confirmed against xWeb's own
-    # CLAUDE.md) - XAGUSD, the only symbol actually configured today, is
-    # exactly that, so this card is expected to show "—" in practice.
+    # "hit" highlighting. The upstream data source never reports volume at
+    # all for OTC/FX-spot and precious-metals instruments (confirmed
+    # against xWeb's own CLAUDE.md) - XAGUSD, the only symbol actually
+    # configured today, is exactly that, so this card is expected to show
+    # "—" in practice.
     avg_vol = metrics.get("AvgVolume")
     volume_sub = "reported, not part of the trigger" if avg_vol is not None else "no volume data for this instrument"
     volume_spark_html, volume_spark_js = _measure_spark(history, "AvgVolume", None, uid, "volume")
@@ -333,8 +334,9 @@ def _render_trigger_detail(entry, history):
         parts.append("<p class='note'>Reported for reference only - it isn't compared against "
                       "anything and doesn't contribute to Delta threshold met.</p>")
     else:
-        parts.append("<p class='note'>No volume data for this instrument (Saxo doesn't report "
-                      "volume for OTC/FX-spot and precious-metals instruments).</p>")
+        parts.append("<p class='note'>No volume data for this instrument (the upstream data "
+                      "source doesn't report volume for OTC/FX-spot and precious-metals "
+                      "instruments).</p>")
 
     return "".join(parts)
 
@@ -371,7 +373,7 @@ def _chart_caption(entry, symbol):
     parts = [f"{html.escape(symbol)} mid price (bid/ask average) — "
              f"last {len(candles)} candles, {html.escape(start)}–{html.escape(end)}"]
     if end_dt is not None and end_dt.date() != datetime.now(timezone.utc).date():
-        parts.append("<strong>no newer candles from Saxo since then — market is likely closed</strong>")
+        parts.append("<strong>no newer candles since then — market is likely closed</strong>")
     return " · ".join(parts)
 
 
@@ -441,8 +443,8 @@ function drawMarketChart(canvasId, candles) {
   ctx.fillText(vals[vals.length - 1].toFixed(4), lastX - 6, lastY - 6);
 
   // Time axis: real per-candle Time (the price data's own timestamp, from
-  // SaxoChartSample.Time), not when this add-on happened to receive the
-  // check that carried it - a handful of evenly-spaced labels across the
+  // the upstream chart sample), not when this add-on happened to receive
+  // the check that carried it - a handful of evenly-spaced labels across the
   // window, not just the two endpoints, so it reads as an actual scale.
   ctx.fillStyle = muted; ctx.globalAlpha = .7; ctx.textBaseline = 'alphabetic';
   const xTickCount = Math.min(6, vals.length);
@@ -605,7 +607,7 @@ a.pill:hover {{ text-decoration: underline; }}
 <div class="meta">
 <span>{symbol}</span>
 <span class="pill {conn_pill_cls}">{conn_pill_text}</span>
-<a class="pill {saxo_pill_cls}" href="{saxo_login_url}" target="_blank" rel="noopener noreferrer" title="Open Saxo login">{saxo_pill_text}</a>
+<a class="pill {auth_pill_cls}" href="{auth_login_url}" target="_blank" rel="noopener noreferrer" title="Open login">{auth_pill_text}</a>
 <span>{last_update_text}</span>
 <span>{next_check_text}</span>
 </div>
@@ -746,7 +748,7 @@ def render_page(notice=None, good=True):
         banner = "<div class='banner'>No checks received yet - waiting on market agent workflow service's first broadcast.</div>"
 
     latest_status = entries[-1].get("Status") if entries else None
-    saxo_pill_cls, saxo_pill_text = _saxo_pill(entries)
+    auth_pill_cls, auth_pill_text = _auth_pill(entries)
 
     conn_pill_cls, conn_pill_text = CONNECTION_PILLS.get(
         market_agent.connection_status(), ("pill-unknown", "Workflow Service: unknown"))
@@ -795,8 +797,8 @@ def render_page(notice=None, good=True):
 
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
-        saxo_pill_cls=saxo_pill_cls, saxo_pill_text=html.escape(saxo_pill_text),
-        saxo_login_url="./saxo-login",
+        auth_pill_cls=auth_pill_cls, auth_pill_text=html.escape(auth_pill_text),
+        auth_login_url="./auth-login",
         conn_pill_cls=conn_pill_cls, conn_pill_text=html.escape(conn_pill_text),
         last_update_text=html.escape(last_update_text),
         next_check_text=html.escape(next_check_text),
@@ -831,7 +833,7 @@ def render_tick_page(ts):
         return TICK_PAGE.format(
             ts="not found", chart_block="", trigger_detail="", font_face=FONT_FACE,
             metric_rows="<tr><td colspan='2'>That check has aged out of history "
-                        "(bounded to the most recent 50 checks, plus 20 Saxo-login-required "
+                        "(bounded to the most recent 50 checks, plus 20 login-required "
                         "ones) or the link is stale.</td></tr>",
             signal_block="")
 
@@ -960,18 +962,18 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 ts = None
             return self._send(render_tick_page(ts))
-        if self._path().endswith("/saxo-login"):
-            # Relayed server-side (see market_agent.resolve_saxo_login_redirect)
+        if self._path().endswith("/auth-login"):
+            # Relayed server-side (see market_agent.resolve_auth_login_redirect)
             # so the browser never makes a cross-origin request to XWEB_HOST
             # itself - that's what triggers Chrome's Local Network Access
             # prompt when viewing the panel via a public hostname, and it
             # wouldn't even work from outside the LAN regardless of Allow/Deny.
-            location = market_agent.resolve_saxo_login_redirect()
+            location = market_agent.resolve_auth_login_redirect()
             if location:
                 return self._redirect(location)
             return self._send(
                 "<!doctype html><meta charset='utf-8'>"
-                "<p>Could not reach the Workflow Service to start Saxo login. "
+                "<p>Could not reach the Workflow Service to start login. "
                 "Check that it's reachable and try again.</p>"
                 "<p><a href='./'>&larr; back</a></p>",
                 status=502)

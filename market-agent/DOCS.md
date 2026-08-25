@@ -7,19 +7,19 @@ a price chart, the AI analysis, and the workflow history, in three sections.
 
 The panel is three cards, top to bottom:
 
-1. **Status** — symbol, connection/Saxo pills, last update/next check, the
+1. **Status** — symbol, connection/auth pills, last update/next check, the
    price chart, and a compact side-by-side summary (**Price move** /
    **Volatility** / **Volume**) of the *last* check — the same measure
    cards described under "Workflow detail" below, just for whichever check
    just happened rather than one you clicked into. The chart's time axis
    labels are the candles' own timestamps (real price data time, from
-   Saxo), not when the add-on happened to receive the check that carried
-   them. When the market's closed, Saxo has nothing newer to hand back,
-   so the chart keeps showing the last real session's candles rather than
-   going blank — the caption below the chart adds the date (not just the
-   time) and a bold "market is likely closed" note whenever those candles
-   aren't from today, so stale data is never mistaken for live price
-   action.
+   the upstream data source), not when the add-on happened to receive the
+   check that carried them. When the market's closed, the data source has
+   nothing newer to hand back, so the chart keeps showing the last real
+   session's candles rather than going blank — the caption below the
+   chart adds the date (not just the time) and a bold "market is likely
+   closed" note whenever those candles aren't from today, so stale data
+   is never mistaken for live price action.
 2. **AI Analysis** — the **Run AI Trend Analysis** button (a real, billed Claude
    call, on demand) and, underneath it, the most recent *billed* run's
    question and answer — this shows up here automatically the moment one
@@ -71,24 +71,24 @@ pill is green but "Last update" is far older than "Next check" ever
 predicted, that's more likely the loop being stuck than a connectivity
 problem.
 
-## Saxo login status
+## Login status
 
 A colored pill next to the symbol shows whether the Workflow Service
-currently has a valid Saxo session — green "Saxo: connected", red "Saxo:
-login required", or grey "Saxo: unknown" before the first check arrives.
+currently has a valid upstream session — green "Auth: connected", red
+"Auth: login required", or grey "Auth: unknown" before the first check
+arrives.
 
-This is pushed from its own dedicated `saxo.authstatus` SignalR topic,
-separate from `marketagent.preview` — it fires the moment a login or
-token refresh actually happens on the Workflow Service side, not on the
-preview loop's 5-minute cadence. That's what makes the pill (and the
-login-required/resolved push notification) react within moments of
-logging in rather than waiting for the next scheduled check. Older
-Workflow Service versions without this topic fall back to inferring the
-pill from the latest preview check's own status — laggier, but still
-correct.
+This is pushed from its own dedicated SignalR topic, separate from
+`marketagent.preview` — it fires the moment a login or token refresh
+actually happens on the Workflow Service side, not on the preview loop's
+5-minute cadence. That's what makes the pill (and the login-required/
+resolved push notification) react within moments of logging in rather
+than waiting for the next scheduled check. Older Workflow Service
+versions without this topic fall back to inferring the pill from the
+latest preview check's own status — laggier, but still correct.
 
 Clicking the pill doesn't send your browser to the Workflow Service
-directly — it hits this add-on's own `/saxo-login` route, which asks the
+directly — it hits this add-on's own `/auth-login` route, which asks the
 Workflow Service server-side (from HAOS, a normal LAN device) where the
 login flow redirects to, and relays that straight to your browser. Two
 reasons: your browser never makes a cross-origin request to a LAN IP
@@ -99,12 +99,12 @@ tunnel already getting you to this panel.
 
 Push notifications are different — tapped from outside any HA page
 entirely, so they still need a real, standalone URL rather than a
-relative path. That link defaults to `http://<workflow_service_host>/saxo/login`
-(LAN-only, zero configuration needed). If you want *that* link to work
-when tapped away from home, set `saxo_login_url` below to your own
-WAN-reachable hostname for it — that value lives in your own Supervisor
-config, not in this public repo, so it never puts a domain name in
-source.
+relative path. That link defaults to the Workflow Service's own login
+route on `workflow_service_host` (LAN-only, zero configuration needed).
+If you want *that* link to work when tapped away from home, set
+`auth_login_url` below to your own WAN-reachable hostname for it — that
+value lives in your own Supervisor config, not in this public repo, so
+it never puts a domain name in source.
 
 ## Notifications
 
@@ -112,7 +112,7 @@ When a check's threshold condition flips from not-met to met, a push
 notification fires via `notify_service` (below) — once per transition,
 not repeated every check while it stays true.
 
-Saxo login state gets the same treatment: a push fires once when a check
+Login state gets the same treatment: a push fires once when a check
 shows login is required, and once more when it resolves — covering both
 the background loop's routine checks and the manual **Run AI Trend
 Analysis** button, not just the button. The login-required push is tappable
@@ -177,9 +177,9 @@ Analysis** button actually bills one.
 
 **Volume is reported for reference only** — it's no longer part of the
 trigger at all, so its card has no threshold and no over/under status,
-just the raw measured value. Saxo doesn't report volume for OTC/FX-spot
-and precious-metals instruments in the first place, so for XAGUSD (the
-default symbol) this card normally shows "—".
+just the raw measured value. The upstream data source doesn't report
+volume for OTC/FX-spot and precious-metals instruments in the first
+place, so for XAGUSD (the default symbol) this card normally shows "—".
 
 Each card also carries a tiny trend line across the last ~12 checks
 (about an hour, at the default 5-minute cadence) — Price move and
@@ -196,8 +196,8 @@ guessed number; the table needs manual updates if pricing changes.
 
 `/share/market-agent/log.jsonl`. This is a panel convenience, not an
 audit trail, so it's kept small: the most recent 50 checks, plus the
-most recent 20 `SaxoAuthRequired` ones tracked separately (an expired
-Saxo session otherwise produces one near-identical entry every poll until
+most recent 20 login-required ones tracked separately (an expired
+session otherwise produces one near-identical entry every poll until
 someone logs back in, which would otherwise crowd out real history out of
 a single shared budget during exactly the outage you'd want history
 for). Workflow detail pages only work for entries still in that window —
@@ -210,7 +210,7 @@ older links go stale and say so rather than erroring.
 | `workflow_service_host` | `192.168.0.201` | LAN address of the Workflow Service |
 | `market_agent_symbol` | `XAGUSD` | Symbol this panel tracks |
 | `notify_service` | *(empty)* | HA notify service name for pushes — pushes are silently skipped until this is set |
-| `saxo_login_url` | *(empty)* | Overrides the Saxo login link (pill + notifications) with your own WAN-reachable URL. Defaults to `http://<workflow_service_host>/saxo/login` (LAN-only) if left empty |
+| `auth_login_url` | *(empty)* | Overrides the login link (pill + notifications) with your own WAN-reachable URL. Defaults to the Workflow Service's own login route on `workflow_service_host` (LAN-only) if left empty |
 | `price_move_threshold_percent` | *(empty)* | Overrides the Workflow Service's Price move trigger threshold. Leave empty to use its own configured value |
 | `volatility_threshold_percent` | *(empty)* | Overrides the Workflow Service's Volatility trigger threshold. Leave empty to use its own configured value |
 | `system_prompt` | *(empty)* | Overrides the system prompt used for the Claude call. Leave empty to use the Workflow Service's own default |

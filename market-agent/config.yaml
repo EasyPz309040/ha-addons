@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.20.0"
+version: "1.21.0"
 slug: "market-agent"
 description: "Live view of the Workflow Service's Market Agent loop: price chart, recent checks, and an on-demand real analysis run, with push notifications when the movement threshold is met."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
@@ -20,7 +20,7 @@ options:
   workflow_service_host: "192.168.0.201"
   market_agent_symbol: "XAGUSD"
   notify_service: ""
-  saxo_login_url: ""
+  auth_login_url: ""
   price_move_threshold_percent: ""
   volatility_threshold_percent: ""
   system_prompt: ""
@@ -28,7 +28,7 @@ schema:
   workflow_service_host: str
   market_agent_symbol: str
   notify_service: str
-  saxo_login_url: str
+  auth_login_url: str
   price_move_threshold_percent: str
   volatility_threshold_percent: str
   system_prompt: str

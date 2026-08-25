@@ -42,7 +42,7 @@ log = logging.getLogger("market_agent")
 # falls back when the var is absent, not when it's present-but-blank. A
 # blank workflow_service_host config value (e.g. from the xweb_host ->
 # workflow_service_host rename not being re-entered after updating)
-# would otherwise silently produce a malformed "http:///saxo/login" -
+# would otherwise silently produce a malformed "http:///saxo/login" URL -
 # real failure mode, not hypothetical, caught after a user report.
 XWEB_HOST = os.environ.get("XWEB_HOST", "").strip() or "192.168.0.201"
 SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "").strip() or "XAGUSD"
@@ -61,12 +61,16 @@ SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
 CONFIG_URL = f"http://{XWEB_HOST}/claude/MarketAgent/config"
 
 TOPIC = "marketagent.preview"
-# Saxo-owned, not marketagent-owned - matches the Workflow Service's own
-# topic-prefix-as-owner convention. Pushed the moment SaxoAuthService's
-# token state actually changes (login, a real refresh, or once at its
-# own startup) - not tied to marketagent.preview's 5-minute poll cadence
-# at all, which is what makes the Saxo pill react immediately to a login
-# instead of waiting for the next preview tick.
+# The Workflow Service's own auth-status topic - the literal name below
+# ("saxo.authstatus") is a wire constant coming straight from its own
+# topic-prefix-as-owner convention and must match exactly what it
+# broadcasts; nothing in this add-on's own naming (AUTH_TOPIC, everything
+# downstream of it) needs to echo that, so it doesn't. Pushed the moment
+# the Workflow Service's own upstream-broker auth state actually changes
+# (login, a real refresh, or once at its own startup) - not tied to
+# marketagent.preview's 5-minute poll cadence at all, which is what makes
+# the auth pill react immediately to a login instead of waiting for the
+# next preview tick.
 AUTH_TOPIC = "saxo.authstatus"
 HUB_URL = f"http://{XWEB_HOST}/streamHub"
 # Fallback chain, used only until the Workflow Service's own broadcast
@@ -75,58 +79,60 @@ HUB_URL = f"http://{XWEB_HOST}/streamHub"
 # in this repo's source - it's public. Defaults to XWEB_HOST (LAN-only,
 # but zero configuration needed). A user who wants this link to survive
 # being tapped from a notification away from home, before the Workflow
-# Service side of this is live, can set saxo_login_url in the add-on's
+# Service side of this is live, can set auth_login_url in the add-on's
 # own config to their own WAN hostname - that value lives in their
 # Supervisor's stored config, never in git, so it never puts a domain in
 # the repo either way.
-_SAXO_LOGIN_URL_OVERRIDE = os.environ.get("SAXO_LOGIN_URL", "").strip()
-_SAXO_LOGIN_URL_FALLBACK = _SAXO_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
+_AUTH_LOGIN_URL_OVERRIDE = os.environ.get("AUTH_LOGIN_URL", "").strip()
+_AUTH_LOGIN_URL_FALLBACK = _AUTH_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
 
 _public_login_url = None  # latest PublicLoginUrl seen on a broadcast, if any
 _public_login_url_lock = threading.Lock()
 
 
 def login_url():
-    """The best currently-known Saxo login URL.
+    """The best currently-known login URL for the Workflow Service's
+    upstream broker session.
 
     Prefers PublicLoginUrl straight from the Workflow Service's own
-    broadcast (it derives this from its own already-configured
-    Saxo:RedirectUri, so it's always right and needs no config here at
-    all) - falls back to _SAXO_LOGIN_URL_FALLBACK only if no tick has
-    carried one yet, e.g. before that field exists on the Workflow
-    Service side, or before the very first tick arrives.
+    broadcast (it derives this from its own already-configured redirect
+    URI, so it's always right and needs no config here at all) - falls
+    back to _AUTH_LOGIN_URL_FALLBACK only if no tick has carried one yet,
+    e.g. before that field exists on the Workflow Service side, or before
+    the very first tick arrives.
     """
     with _public_login_url_lock:
-        return _public_login_url or _SAXO_LOGIN_URL_FALLBACK
+        return _public_login_url or _AUTH_LOGIN_URL_FALLBACK
 
 
-_last_saxo_auth_status = None  # latest saxo.authstatus payload, if any have arrived yet
-_saxo_auth_status_lock = threading.Lock()
+_last_auth_status = None  # latest saxo.authstatus payload, if any have arrived yet
+_auth_status_lock = threading.Lock()
 
 
-def saxo_auth_status():
+def auth_status():
     """The latest saxo.authstatus push, or None if none has arrived yet
     (an older Workflow Service without this topic, or just not received
-    one this run). ui.py prefers this for the Saxo pill when present,
+    one this run). ui.py prefers this for the auth pill when present,
     falling back to inferring it from the last marketagent.preview tick's
     Status otherwise - same defensive fields-may-be-absent pattern as
     PublicLoginUrl and the trigger threshold fields.
     """
-    with _saxo_auth_status_lock:
-        return _last_saxo_auth_status
+    with _auth_status_lock:
+        return _last_auth_status
 
 
 SHARE = Path("/share/market-agent")
 LOGFILE = SHARE / "log.jsonl"
 STATEFILE = SHARE / ".notify-state.json"
 # This log is a panel convenience, not an audit trail - no need to keep
-# hundreds of routine ticks. SaxoAuthRequired is capped separately and
-# smaller: an expired session produces one near-identical entry per poll
-# until someone logs back in, and none of the extras beyond a handful are
-# useful - without a separate cap they'd crowd out real history out of the
-# single MAX_ENTRIES budget during exactly the outage you'd want history
-# for. Self-healing: an existing oversized log.jsonl (from before this
-# policy) gets pruned down on the very next append, no migration needed.
+# hundreds of routine ticks. The auth-required status (wire value
+# "SaxoAuthRequired") is capped separately and smaller: an expired
+# session produces one near-identical entry per poll until someone logs
+# back in, and none of the extras beyond a handful are useful - without a
+# separate cap they'd crowd out real history out of the single
+# MAX_ENTRIES budget during exactly the outage you'd want history for.
+# Self-healing: an existing oversized log.jsonl (from before this policy)
+# gets pruned down on the very next append, no migration needed.
 MAX_ENTRIES = 50
 MAX_AUTH_REQUIRED_ENTRIES = 20
 _LOW_VALUE_STATUSES = {"SaxoAuthRequired"}
@@ -180,7 +186,7 @@ def _read_state():
     try:
         return json.loads(STATEFILE.read_text(encoding="utf-8"))
     except Exception:
-        return {"last_triggered": False, "last_saxo_auth_required": False}
+        return {"last_triggered": False, "last_auth_required": False}
 
 
 def _write_state(state):
@@ -261,23 +267,23 @@ def _update_public_login_url(url):
         _public_login_url = url
 
 
-def _handle_saxo_auth_signal(required):
+def _handle_auth_signal(required):
     """Login-required/resolved notification, deduped on transition.
 
-    Single source of truth for last_saxo_auth_required so that the
-    marketagent.preview topic's own SaxoAuthRequired status and the
-    saxo.authstatus push - which can report the same transition
-    independently, sometimes within moments of each other - can't
-    double-notify. Self-locking: callers must NOT already hold
-    _state_lock.
+    Single source of truth for last_auth_required so that the
+    marketagent.preview topic's own auth-required status (wire value
+    "SaxoAuthRequired") and the saxo.authstatus push - which can report
+    the same transition independently, sometimes within moments of each
+    other - can't double-notify. Self-locking: callers must NOT already
+    hold _state_lock.
     """
     with _state_lock:
         state = _read_state()
-        if required and not state.get("last_saxo_auth_required"):
-            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
-        elif state.get("last_saxo_auth_required") and not required:
-            notify("Market Agent", "Saxo re-authenticated - Market Agent back online.")
-        state["last_saxo_auth_required"] = required
+        if required and not state.get("last_auth_required"):
+            notify("Market Agent", f"Login required: {login_url()}", url=login_url())
+        elif state.get("last_auth_required") and not required:
+            notify("Market Agent", "Re-authenticated - Market Agent back online.")
+        state["last_auth_required"] = required
         _write_state(state)
 
 
@@ -316,19 +322,19 @@ def _on_preview_data(result):
     # serializer configured for camelCase - don't copy field names from
     # one to the other.
     status = result.get("Status")
-    saxo_auth_required = status == "SaxoAuthRequired"
+    auth_required = status == "SaxoAuthRequired"
     metrics = result.get("Metrics") or {}
     triggered = bool(metrics.get("Triggered"))
 
     _update_public_login_url(result.get("PublicLoginUrl"))
-    _handle_saxo_auth_signal(saxo_auth_required)
+    _handle_auth_signal(auth_required)
 
     with _state_lock:
         state = _read_state()
-        # A SaxoAuthRequired tick carries no metrics at all - don't let a
+        # An auth-required tick carries no metrics at all - don't let a
         # stale "still triggered" state silently persist through however
         # many auth-required ticks happen before someone logs back in.
-        if not saxo_auth_required:
+        if not auth_required:
             if triggered and not state.get("last_triggered"):
                 reasons = ", ".join(metrics.get("Reasons") or [])
                 notify("Market Agent",
@@ -344,12 +350,12 @@ def _on_auth_status_data(result):
     """
     entry = dict(result)
     entry["receivedAt"] = time.time()
-    global _last_saxo_auth_status
-    with _saxo_auth_status_lock:
-        _last_saxo_auth_status = entry
+    global _last_auth_status
+    with _auth_status_lock:
+        _last_auth_status = entry
 
     _update_public_login_url(result.get("PublicLoginUrl"))
-    _handle_saxo_auth_signal(not result.get("Authenticated"))
+    _handle_auth_signal(not result.get("Authenticated"))
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -364,20 +370,21 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def resolve_saxo_login_redirect():
-    """Ask the Workflow Service where /saxo/login would send a browser,
-    without going there.
+def resolve_auth_login_redirect():
+    """Ask the Workflow Service where its own /saxo/login route (a fixed
+    path on the Workflow Service side, not something this add-on names)
+    would send a browser, without going there.
 
-    Called from ui.py's own /saxo-login route (server-side, on HAOS - a
+    Called from ui.py's own /auth-login route (server-side, on HAOS - a
     normal LAN device, not a sandboxed browser) so the browser itself
     never has to make a cross-origin request to XWEB_HOST at all. That
     request from a public-origin ingress page (e.g. viewing the panel via
     a public hostname) to a private-range IP is exactly what triggers
     Chrome's Local Network Access prompt - and even Allow wouldn't help,
     since the browser genuinely can't route to a LAN IP from outside the
-    LAN in the first place. Relaying the real Location (Saxo's public
-    authorize URL) sidesteps both problems: the browser only ever talks
-    to the add-on's own origin, then goes straight to Saxo.
+    LAN in the first place. Relaying the real Location (the upstream
+    broker's public authorize URL) sidesteps both problems: the browser
+    only ever talks to the add-on's own origin, then goes straight there.
 
     Returns the Location header string, or None if the Workflow Service
     didn't respond with a redirect at all (unreachable, unexpected
@@ -392,7 +399,7 @@ def resolve_saxo_login_redirect():
             return e.headers.get("Location")
         return None
     except Exception as e:
-        log.warning("resolve_saxo_login_redirect failed: %s", e)
+        log.warning("resolve_auth_login_redirect failed: %s", e)
         return None
 
 
@@ -401,9 +408,9 @@ def trigger_real_run():
 
     A synchronous request/response from ui.py's button handler, not part
     of the background subscriber - unrelated to the loop's own ticks.
-    On a Saxo 401 this also fires the relogin notification immediately,
-    since a manual click getting a 401 is the clearest, most immediate
-    signal that the token is actually missing right now.
+    On a 401 this also fires the relogin notification immediately, since
+    a manual click getting a 401 is the clearest, most immediate signal
+    that the token is actually missing right now.
     """
     url = f"http://{XWEB_HOST}/claude/MarketAgent?symbols={SYMBOL}&preview=false"
     req = urllib.request.Request(url, method="GET")
@@ -413,8 +420,8 @@ def trigger_real_run():
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")
         if e.code == 401:
-            notify("Market Agent", f"Saxo login required: {login_url()}", url=login_url())
-            return False, f"Saxo authentication required. Log in: {login_url()}"
+            notify("Market Agent", f"Login required: {login_url()}", url=login_url())
+            return False, f"Authentication required. Log in: {login_url()}"
         return False, f"Workflow Service returned {e.code}: {body}"
     except Exception as e:
         return False, f"Could not reach the Workflow Service: {e}"
@@ -490,8 +497,8 @@ def _connect_once():
         # ever shown came from the one-shot RequestLatest snapshot below,
         # taken at connect/reconnect time - never a live push - which is
         # why history gaps didn't track the 5-minute poll interval at all
-        # (found 2026-08-23 while investigating a reported Saxo-login
-        # status lag). Must be sent on every (re)connect, not just the
+        # (found 2026-08-23 while investigating a reported auth-status
+        # lag). Must be sent on every (re)connect, not just the
         # first, since group membership doesn't survive a reconnect
         # either.
         hub.send("Subscribe", [TOPIC])
