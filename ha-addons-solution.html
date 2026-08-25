@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ha-addons Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f6f3;
+    --surface: #ffffff;
+    --surface-alt: #eef0ec;
+    --border: #ccd1c8;
+    --border-strong: #99a196;
+    --text: #1a201c;
+    --text-muted: #565f58;
+    --text-faint: #838c84;
+    --wire: #256269;
+    --wire-strong: #163f44;
+    --wire-soft: #d9e7e6;
+    --spend: #a8471a;
+    --spend-strong: #7d3311;
+    --spend-soft: #f3ded1;
+    --disabled: #9aa39c;
+    --proposed: #5b4f96;
+    --proposed-strong: #423571;
+    --proposed-soft: #e5e0f5;
+    --shadow: 0 1px 2px rgba(20, 24, 20, 0.06), 0 4px 16px rgba(20, 24, 20, 0.04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10130f;
+      --surface: #171b16;
+      --surface-alt: #1c211b;
+      --border: #2c332a;
+      --border-strong: #40493d;
+      --text: #e9ece6;
+      --text-muted: #a2ac9d;
+      --text-faint: #6b756a;
+      --wire: #5fb0b6;
+      --wire-strong: #86c7cc;
+      --wire-soft: #17302f;
+      --spend: #e2833f;
+      --spend-strong: #f0a05e;
+      --spend-soft: #3a2413;
+      --disabled: #565f58;
+      --proposed: #b3a4f0;
+      --proposed-strong: #cabdf7;
+      --proposed-soft: #262048;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #10130f;
+    --surface: #171b16;
+    --surface-alt: #1c211b;
+    --border: #2c332a;
+    --border-strong: #40493d;
+    --text: #e9ece6;
+    --text-muted: #a2ac9d;
+    --text-faint: #6b756a;
+    --wire: #5fb0b6;
+    --wire-strong: #86c7cc;
+    --wire-soft: #17302f;
+    --spend: #e2833f;
+    --spend-strong: #f0a05e;
+    --spend-soft: #3a2413;
+    --disabled: #565f58;
+    --proposed: #b3a4f0;
+    --proposed-strong: #cabdf7;
+    --proposed-soft: #262048;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 2.5rem 1.5rem 4rem;
+    display: flex;
+    justify-content: center;
+  }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace; }
+
+  .sheet {
+    width: 100%;
+    max-width: 1320px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  header.page {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  header.page h1 {
+    margin: 0;
+    font-size: clamp(1.6rem, 3vw, 2.1rem);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  header.page p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.98rem;
+    max-width: 76ch;
+    line-height: 1.55;
+  }
+
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+  }
+
+  .badge {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 1.75rem 1.75rem 1.5rem;
+  }
+
+  .card h2 {
+    margin: 0 0 1rem;
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .card .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text);
+    margin: 0 0 0.3rem;
+  }
+
+  .diagram-scroll {
+    overflow-x: auto;
+    margin-top: 1.1rem;
+    padding-bottom: 0.25rem;
+  }
+
+  figure { margin: 0; }
+
+  figcaption {
+    margin-top: 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    max-width: 82ch;
+  }
+
+  svg { display: block; width: 100%; height: auto; min-width: 620px; }
+
+  .node-label {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 13px;
+    fill: var(--text);
+  }
+
+  .node-sub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    fill: var(--text-muted);
+  }
+
+  .edge-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    fill: var(--text-muted);
+  }
+
+  .edge-label-spend {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    font-weight: 600;
+    fill: var(--spend);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.1rem;
+    margin-top: 1.1rem;
+    padding-top: 0.9rem;
+    border-top: 1px dashed var(--border);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+
+  .legend span.swatch {
+    display: inline-block;
+    width: 22px;
+    height: 2px;
+    margin-right: 0.4rem;
+    vertical-align: middle;
+  }
+
+  .ref-table {
+    margin-top: 1.25rem;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+
+  .ref-table th {
+    text-align: left;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    font-weight: 500;
+    padding: 0 0.7rem 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ref-table td {
+    padding: 0.55rem 0.7rem 0.55rem 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  .ref-table tr:last-child td { border-bottom: none; }
+
+  .ref-table .wf {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .ref-table code {
+    font-size: 0.84em;
+    color: var(--wire-strong);
+    background: var(--wire-soft);
+    padding: 0.05rem 0.35rem;
+    border-radius: 5px;
+  }
+
+  footer.page {
+    color: var(--text-faint);
+    font-size: 0.82rem;
+    text-align: center;
+    padding-top: 0.5rem;
+  }
+
+  footer.page code { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="page">
+    <h1>ha-addons — solution architecture</h1>
+    <p>Home Assistant add-on shells for a personal home lab: two independent add-ons, each its own sidebar
+    entry, both public repos with no proprietary logic baked in. <strong>Cluster Control</strong> provisions and
+    patches a four-node k3s fleet via Ansible, pulled from a private repo at runtime. <strong>Market Agent</strong>
+    is a live, notification-driven client for xWeb's Market Agent workflow — this is the front-end half of that
+    integration; xWeb's own diagram covers only its backend API and workflow architecture, never a specific
+    client's internals.</p>
+    <div class="badges">
+      <span class="badge">HA Supervisor add-on</span>
+      <span class="badge">Ingress-only, no exposed port</span>
+      <span class="badge">Python 3 · signalrcore</span>
+      <span class="badge">SignalR client</span>
+      <span class="badge">ansible-core</span>
+      <span class="badge">Public repo, no secrets</span>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- FIGURE 1 — Repo & add-on structure                            -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <p class="kicker">Figure 1 — Repo &amp; add-on structure</p>
+    <h2>Two add-ons, one public shell each — proprietary content lives elsewhere</h2>
+    <div class="diagram-scroll">
+      <figure>
+        <svg viewBox="0 0 1300 300" role="img"
+             aria-label="Home Assistant Supervisor installs this repository directly, no token needed since it is public. Cluster Control is a thin shell around Ansible: Dockerfile, run.sh, ui.py, all committed here, but the actual playbooks and inventory are cloned at container start from a separate private repo using a read-only deploy key stored on share, never baked into the image. Market Agent is a thin shell around a SignalR client: Dockerfile, market underscore agent dot py, ui dot py, all committed here, with zero xWeb logic of any kind — no trigger thresholds, no Claude system prompt, no Claude API key. Both add-ons run behind Home Assistant ingress only, no exposed port and no separate login.">
+          <rect x="20" y="40" width="1260" height="60" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="650" y="65" text-anchor="middle" class="node-label">Home Assistant Supervisor</text>
+          <text x="650" y="83" text-anchor="middle" class="node-sub">installs this repo directly — public, no token in Supervisor config</text>
+
+          <rect x="40" y="130" width="580" height="150" rx="12" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="60" y="156" class="node-label" style="font-size:14px">cluster-control/</text>
+          <text x="60" y="176" class="node-sub">Dockerfile · run.sh · sync-playbooks.sh · ui.py</text>
+          <text x="60" y="196" class="node-sub" style="fill:var(--text-faint)">nothing environment-specific committed here</text>
+          <rect x="60" y="212" width="540" height="48" rx="8" style="fill:none;stroke:var(--wire);stroke-dasharray:3 3"></rect>
+          <text x="330" y="232" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">playbooks + inventory — cloned at container start</text>
+          <text x="330" y="248" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">from EasyPz309040/Home (private), read-only deploy key on /share</text>
+
+          <rect x="680" y="130" width="580" height="150" rx="12" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="700" y="156" class="node-label" style="font-size:14px">market-agent/</text>
+          <text x="700" y="176" class="node-sub">Dockerfile · market_agent.py · ui.py</text>
+          <text x="700" y="196" class="node-sub" style="fill:var(--text-faint)">carries no separate content to protect — a thin client</text>
+          <rect x="700" y="212" width="540" height="48" rx="8" style="fill:none;stroke:var(--disabled);stroke-dasharray:3 3"></rect>
+          <text x="970" y="232" text-anchor="middle" class="node-sub" style="fill:var(--text-muted)">no trigger thresholds · no system prompt · no Claude key</text>
+          <text x="970" y="248" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">that boundary is this repo's own choice, not enforced by xWeb</text>
+
+          <line x1="330" y1="100" x2="330" y2="126" style="stroke:var(--wire);stroke-width:1.6" marker-end="url(#f1-wire)"></line>
+          <line x1="970" y1="100" x2="970" y2="126" style="stroke:var(--wire);stroke-width:1.6" marker-end="url(#f1-wire)"></line>
+          <defs>
+            <marker id="f1-wire" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style="fill:var(--wire)"></path>
+            </marker>
+          </defs>
+        </svg>
+      </figure>
+    </div>
+    <div class="legend">
+      <div><span class="swatch" style="background:var(--wire)"></span>fetched at runtime, not committed</div>
+      <div><span class="swatch" style="background:var(--disabled)"></span>deliberately absent — a repo-level boundary</div>
+    </div>
+    <figcaption>Both add-ons started as one add-on with two sidebar pages and were split apart the same day once
+    it was clear each concern wanted its own entry — see <code>ha-addons/CLAUDE.md</code>. Splitting also made the
+    proprietary-content boundary easier to keep honest: Cluster Control's secrets live in a private repo it clones
+    at runtime; Market Agent has no secrets of its own to protect in the first place, since it is a pure client of
+    xWeb's already-deployed endpoints.</figcaption>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FIGURE 2 — Market Agent: live connection & self-healing       -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <p class="kicker">Figure 2 — Market Agent: live connection &amp; self-healing</p>
+    <h2>One persistent SignalR connection, two topics, config pushed on every (re)connect</h2>
+    <div class="diagram-scroll">
+      <figure>
+        <svg viewBox="0 0 1300 520" role="img"
+             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.preview, the background loop's own tick roughly every five minutes, and saxo.authstatus, pushed the instant a login or token refresh happens rather than waiting on the next scheduled tick. On the same connect event it also pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint, and a separate watchdog thread force-closes the connection if it has claimed connected for over twenty five minutes with no new preview tick, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
+          <defs>
+            <marker id="f2-wire" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style="fill:var(--wire)"></path>
+            </marker>
+            <marker id="f2-spend" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" style="fill:var(--spend)"></path>
+            </marker>
+          </defs>
+
+          <rect x="20" y="40" width="380" height="460" rx="14" style="fill:none;stroke:var(--border-strong);stroke-dasharray:2 3"></rect>
+          <text x="40" y="66" class="node-label">xWeb — backend, LAN-only</text>
+          <text x="40" y="82" class="node-sub" style="fill:var(--text-faint)">see xWeb's own diagram</text>
+
+          <rect x="440" y="40" width="840" height="460" rx="14" style="fill:none;stroke:var(--border-strong);stroke-dasharray:2 3"></rect>
+          <text x="460" y="66" class="node-label">market-agent add-on — this repo</text>
+          <text x="460" y="82" class="node-sub" style="fill:var(--text-faint)">no xWeb logic of its own, purely a subscriber + client</text>
+
+          <rect x="50" y="110" width="320" height="70" rx="10" style="fill:var(--wire-soft);stroke:var(--wire)"></rect>
+          <text x="210" y="134" text-anchor="middle" class="node-label" style="fill:var(--wire-strong);font-size:12.5px">StreamHub</text>
+          <text x="210" y="152" text-anchor="middle" class="node-sub">marketagent.preview — every ~5 min</text>
+          <text x="210" y="168" text-anchor="middle" class="node-sub">saxo.authstatus — pushed on login/refresh</text>
+
+          <rect x="50" y="210" width="320" height="50" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="210" y="230" text-anchor="middle" class="node-label" style="font-size:12px">POST /claude/MarketAgent/config</text>
+          <text x="210" y="247" text-anchor="middle" class="node-sub">unified thresholds + system prompt</text>
+
+          <rect x="50" y="400" width="320" height="70" rx="10" style="fill:var(--spend-soft);stroke:var(--spend)"></rect>
+          <text x="210" y="424" text-anchor="middle" class="node-label" style="fill:var(--spend-strong);font-size:12.5px">GET /claude/MarketAgent?preview=false</text>
+          <text x="210" y="442" text-anchor="middle" class="node-sub" style="fill:var(--spend-strong)">Claude API — billed</text>
+          <text x="210" y="458" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">only path that spends money</text>
+
+          <rect x="470" y="100" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="635" y="122" text-anchor="middle" class="node-label" style="font-size:12.5px">SignalR subscriber</text>
+          <text x="635" y="140" text-anchor="middle" class="node-sub">Subscribe + RequestLatest, both topics</text>
+          <text x="635" y="156" text-anchor="middle" class="node-sub">on every connect AND every reconnect</text>
+          <text x="635" y="172" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">group membership doesn't survive a reconnect</text>
+
+          <rect x="470" y="210" width="330" height="80" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="635" y="232" text-anchor="middle" class="node-label" style="font-size:12.5px">Config push</text>
+          <text x="635" y="250" text-anchor="middle" class="node-sub">same connect event as Subscribe</text>
+          <text x="635" y="266" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">self-healing: xWeb redeploy wipes its own</text>
+          <text x="635" y="280" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">config, but also drops this connection</text>
+
+          <rect x="470" y="320" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="635" y="342" text-anchor="middle" class="node-label" style="font-size:12.5px">Stale-connection watchdog</text>
+          <text x="635" y="360" text-anchor="middle" class="node-sub">separate thread, checks every 60s</text>
+          <text x="635" y="376" text-anchor="middle" class="node-sub">force-closes if "connected" but no new</text>
+          <text x="635" y="392" text-anchor="middle" class="node-sub">preview tick in 25 min (5x normal cadence)</text>
+
+          <rect x="850" y="100" width="400" height="120" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="1050" y="124" text-anchor="middle" class="node-label" style="font-size:12.5px">Notification dedup</text>
+          <text x="1050" y="142" text-anchor="middle" class="node-sub">edge-triggered, not every tick</text>
+          <text x="1050" y="160" text-anchor="middle" class="node-sub">Delta threshold met: false → true</text>
+          <text x="1050" y="176" text-anchor="middle" class="node-sub">Saxo auth flip, either direction</text>
+          <text x="1050" y="196" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">one shared state, both topics feed it</text>
+
+          <rect x="850" y="250" width="400" height="60" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="1050" y="272" text-anchor="middle" class="node-label" style="font-size:12px">HA Supervisor proxied API</text>
+          <text x="1050" y="290" text-anchor="middle" class="node-sub">homeassistant_api: true — no token needed</text>
+
+          <rect x="850" y="340" width="400" height="140" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="1050" y="362" text-anchor="middle" class="node-label" style="font-size:12.5px">UI panel — 3 cards</text>
+          <text x="1050" y="382" text-anchor="middle" class="node-sub">Status: pills, chart, measure cards + sparklines</text>
+          <text x="1050" y="398" text-anchor="middle" class="node-sub">AI Analysis: Run button + last billed Q&amp;A</text>
+          <text x="1050" y="414" text-anchor="middle" class="node-sub">Workflow History: every check, click through for detail</text>
+          <text x="1050" y="434" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">Saxo pill links via a server-side relay, not tap-through</text>
+          <text x="1050" y="450" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">(avoids Chrome's Local Network Access prompt)</text>
+
+          <line x1="370" y1="145" x2="465" y2="145" style="stroke:var(--wire);stroke-width:1.8" marker-end="url(#f2-wire)"></line>
+          <line x1="465" y1="235" x2="370" y2="235" style="stroke:var(--wire);stroke-width:1.6" marker-end="url(#f2-wire)"></line>
+          <line x1="635" y1="190" x2="635" y2="206" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="635" y1="290" x2="635" y2="316" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
+          <line x1="800" y1="150" x2="845" y2="150" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="1050" y1="220" x2="1050" y2="246" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="1050" y1="310" x2="1050" y2="336" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
+          <path d="M 850 400 L 210 400 L 210 466" style="fill:none;stroke:var(--spend);stroke-width:1.8" marker-end="url(#f2-spend)"></path>
+          <text x="530" y="392" text-anchor="middle" class="edge-label-spend">click Run AI Trend Analysis (LAN)</text>
+        </svg>
+      </figure>
+    </div>
+    <div class="legend">
+      <div><span class="swatch" style="background:var(--wire)"></span>internal / automated flow</div>
+      <div><span class="swatch" style="background:var(--spend)"></span>the human-approved path to a billed call</div>
+      <div><span class="swatch" style="background:var(--wire);border-top:2px dashed var(--wire);height:0"></span>fired on state change, not every tick</div>
+    </div>
+    <figcaption>Superseded xWeb's own diagram's former "Figure 6" — moved here 2026-08-25 so xWeb's diagram can
+    stay scoped to its own backend/API/workflow surface rather than describing a specific client's internals. This
+    version also reflects everything built since that figure was drawn: a second topic
+    (<code>saxo.authstatus</code>) so the Saxo pill reacts within moments of a login instead of waiting on the next
+    preview tick; the config-push endpoint, which is what makes trigger thresholds and the Claude system prompt
+    adjustable from this add-on's own config without touching xWeb directly; and the stale-connection watchdog,
+    added after a real incident where the connection survived an xWeb redeploy without erroring or reconnecting —
+    TCP stayed open, the pill kept saying "connected", but no further tick ever arrived. <code>market_agent.py</code>
+    never calls Claude on its own — every background tick is <code>preview: true</code> by design, so the free
+    loop can never spend money autonomously; only a human clicking <strong>Run AI Trend Analysis</strong> reaches
+    the billed path.</figcaption>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FIGURE 3 — Cluster Control: provisioning flow                 -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <p class="kicker">Figure 3 — Cluster Control: provisioning flow</p>
+    <h2>One self-healing entry point, plus targeted playbooks for everything else</h2>
+    <table class="ref-table">
+      <tr><th>Playbook</th><th>What it does</th></tr>
+      <tr><td class="wf"><code>provision-cluster.yml</code></td><td>Identity, packages, boot config, k3s membership, the pi2 NFS export, OLED/fan hardware — reads current state first and only changes what's actually wrong. Safe to re-run any time, on any host, from a fresh image or a live node alike.</td></tr>
+      <tr><td class="wf"><code>cluster-update.yml</code></td><td>Cordon → drain → patch → reboot → wait for Ready → uncordon. Workers first, storage node (pi2) last, control plane last — three explicit plays, not inventory declaration order.</td></tr>
+      <tr><td class="wf"><code>backup-datastore.yml</code> / <code>backup-secrets.yml</code></td><td>Nightly. Secrets are the one thing that doesn't rebuild from git on its own, so that backup is what actually matters for recovering a dead control plane.</td></tr>
+      <tr><td class="wf"><code>flux-reconcile.yml</code></td><td>Forces Flux to pull and apply <code>PiCluster</code> git immediately, instead of waiting out its own poll interval.</td></tr>
+      <tr><td class="wf"><code>redeploy-xweb.yml</code></td><td>Force-restarts xWeb to re-pull its floating <code>:latest</code> tag, comparing the image digest before/after so a run against a not-yet-published build is a visible no-op, not a silent failure.</td></tr>
+    </table>
+    <figcaption>Every playbook run is triggered from this add-on's own panel — a Preview/Run button per playbook,
+    playbooks synced fresh from the private <code>Home</code> repo before every run rather than baked into the
+    add-on image. Ansible only ever reaches the k3s API to check readiness and cordon/drain safely before a
+    reboot; it never manages Kubernetes objects directly — that's Flux's job, reconciling from <code>PiCluster</code>
+    git. See <code>Home/ANSIBLE/README.md</code> for the full playbook reference and exception paths.</figcaption>
+  </div>
+
+  <footer class="page">
+    ha-addons · <code>cluster-control/</code> + <code>market-agent/</code> · public repo, HA Supervisor add-on store · see <code>CLAUDE.md</code> for the split rationale
+  </footer>
+
+</div>
+</body>
+</html>
