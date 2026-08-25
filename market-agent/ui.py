@@ -594,8 +594,9 @@ canvas {{ width: 100%; height: 220px; display: block; }}
 .ai-result .note {{ font-size: .78rem; opacity: .65; margin: 0 0 8px; }}
 .ai-result pre {{ white-space: pre-wrap; word-break: break-word; font-size: .82rem;
   background: rgba(127,127,127,.1); padding: 10px 12px; border-radius: 8px; margin: 6px 0 0; }}
+.table-scroll {{ overflow-x: auto; }}
 table {{ width: 100%; border-collapse: collapse; font-size: .82rem; }}
-th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,127,127,.18); }}
+th, td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(127,127,127,.18); white-space: nowrap; }}
 td.num {{ font-variant-numeric: tabular-nums; text-align: right; }}
 th.num {{ text-align: right; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
@@ -640,10 +641,12 @@ a.pill:hover {{ text-decoration: underline; }}
 </div>
 <div class="card">
 <h2>Workflow History</h2>
+<div class="table-scroll">
 <table><tr><th>Time</th><th>Status</th><th>Delta threshold met</th><th>Reasons</th>
 <th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
 </table>
+</div>
 </div>
 <script>
 {chart_js_fn}
