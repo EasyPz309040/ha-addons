@@ -129,24 +129,35 @@ def _fmt_num(v):
 
 
 def _fmt_candle_time(s):
-    """HH:MM for a candle from today (UTC); prefixes the date otherwise -
-    without this, stale candles (e.g. Friday's last session, still shown
-    through a closed weekend because the upstream data source has nothing newer to return)
-    read as if they were today's live price action. Confirmed for real
-    2026-08-23: EvalCandles was still 2026-08-21 17:00-20:55 on a Sunday,
-    with no date shown anywhere, looking exactly like fresh data.
+    """HH:MM in the container's local time zone, for a candle from today;
+    prefixes the date otherwise - without this, stale candles (e.g.
+    Friday's last session, still shown through a closed weekend because
+    the upstream data source has nothing newer to return) read as if they
+    were today's live price action. Confirmed for real 2026-08-23:
+    EvalCandles was still 2026-08-21 17:00-20:55 on a Sunday, with no date
+    shown anywhere, looking exactly like fresh data.
+
+    _parse_dotnet_dt hands back UTC (the wire format's own zone) -
+    astimezone() with no argument converts to the system's local zone,
+    the same one time.localtime() (used for "Last update"/"Last check"
+    elsewhere on this page) already reads from. Converting here keeps the
+    chart's own axis/caption consistent with those, rather than the two
+    silently disagreeing by the local UTC offset - found for real
+    2026-08-25 when a check timestamped locally as 21:13 had its newest
+    candle labelled 19:10, two hours "behind" for no real reason.
     """
     dt = _parse_dotnet_dt(s)
     if not dt:
         return ""
-    if dt.date() == datetime.now(timezone.utc).date():
+    dt = dt.astimezone()
+    if dt.date() == datetime.now().astimezone().date():
         return dt.strftime("%H:%M")
     return dt.strftime("%b %d, %H:%M")
 
 
 def _fmt_dt(s):
     dt = _parse_dotnet_dt(s)
-    return dt.strftime("%Y-%m-%d %H:%M") if dt else "—"
+    return dt.astimezone().strftime("%Y-%m-%d %H:%M") if dt else "—"
 
 
 def _fmt_price(v):
@@ -372,7 +383,7 @@ def _chart_caption(entry, symbol):
 
     parts = [f"{html.escape(symbol)} mid price (bid/ask average) — "
              f"last {len(candles)} candles, {html.escape(start)}–{html.escape(end)}"]
-    if end_dt is not None and end_dt.date() != datetime.now(timezone.utc).date():
+    if end_dt is not None and end_dt.astimezone().date() != datetime.now().astimezone().date():
         parts.append("<strong>no newer candles since then — market is likely closed</strong>")
     return " · ".join(parts)
 
