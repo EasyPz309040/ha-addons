@@ -569,7 +569,7 @@ button {{ font: inherit; font-weight: 700; font-size: .85rem; padding: 10px 22px
   border-radius: 999px; border: none; background: #039be5; color: #fff;
   cursor: pointer; }}
 button:hover {{ background: #0288d1; }}
-.run-row {{ display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }}
+.run-row {{ display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }}
 .run-row form {{ margin: 0; }}
 .hint {{ font-size: .78rem; opacity: .65; margin: 0 0 9px; }}
 .banner {{ padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
