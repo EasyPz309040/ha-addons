@@ -390,52 +390,52 @@
           <text x="1090" y="442" text-anchor="middle" class="node-sub" style="fill:var(--spend-strong)">Claude API — billed</text>
           <text x="1090" y="458" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">only path that spends money</text>
 
-          <rect x="50" y="100" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
-          <text x="215" y="122" text-anchor="middle" class="node-label" style="font-size:12.5px">SignalR subscriber</text>
-          <text x="215" y="140" text-anchor="middle" class="node-sub">Subscribe + RequestLatest, both topics</text>
-          <text x="215" y="156" text-anchor="middle" class="node-sub">on every connect AND every reconnect</text>
-          <text x="215" y="172" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">group membership doesn't survive a reconnect</text>
+          <rect x="500" y="100" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="665" y="122" text-anchor="middle" class="node-label" style="font-size:12.5px">SignalR subscriber</text>
+          <text x="665" y="140" text-anchor="middle" class="node-sub">Subscribe + RequestLatest, both topics</text>
+          <text x="665" y="156" text-anchor="middle" class="node-sub">on every connect AND every reconnect</text>
+          <text x="665" y="172" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">group membership doesn't survive a reconnect</text>
 
-          <rect x="50" y="210" width="330" height="80" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
-          <text x="215" y="232" text-anchor="middle" class="node-label" style="font-size:12.5px">Config push</text>
-          <text x="215" y="250" text-anchor="middle" class="node-sub">same connect event as Subscribe</text>
-          <text x="215" y="266" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">self-healing: xWeb redeploy wipes its own</text>
-          <text x="215" y="280" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">config, but also drops this connection</text>
+          <rect x="500" y="210" width="330" height="80" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="665" y="232" text-anchor="middle" class="node-label" style="font-size:12.5px">Config push</text>
+          <text x="665" y="250" text-anchor="middle" class="node-sub">same connect event as Subscribe</text>
+          <text x="665" y="266" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">self-healing: xWeb redeploy wipes its own</text>
+          <text x="665" y="280" text-anchor="middle" class="node-sub" style="fill:var(--wire-strong)">config, but also drops this connection</text>
 
-          <rect x="50" y="320" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
-          <text x="215" y="342" text-anchor="middle" class="node-label" style="font-size:12.5px">Stale-connection watchdog</text>
-          <text x="215" y="360" text-anchor="middle" class="node-sub">separate thread, checks every 60s</text>
-          <text x="215" y="376" text-anchor="middle" class="node-sub">force-closes if "connected" but no new</text>
-          <text x="215" y="392" text-anchor="middle" class="node-sub">preview tick in 25 min (5x normal cadence)</text>
+          <rect x="500" y="320" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="665" y="342" text-anchor="middle" class="node-label" style="font-size:12.5px">Stale-connection watchdog</text>
+          <text x="665" y="360" text-anchor="middle" class="node-sub">separate thread, checks every 60s</text>
+          <text x="665" y="376" text-anchor="middle" class="node-sub">force-closes if "connected" but no new</text>
+          <text x="665" y="392" text-anchor="middle" class="node-sub">preview tick in 25 min (5x normal cadence)</text>
 
-          <rect x="430" y="100" width="400" height="120" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
-          <text x="630" y="124" text-anchor="middle" class="node-label" style="font-size:12.5px">Notification dedup</text>
-          <text x="630" y="142" text-anchor="middle" class="node-sub">edge-triggered, not every tick</text>
-          <text x="630" y="160" text-anchor="middle" class="node-sub">Delta threshold met: false → true</text>
-          <text x="630" y="176" text-anchor="middle" class="node-sub">Saxo auth flip, either direction</text>
-          <text x="630" y="196" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">one shared state, both topics feed it</text>
+          <rect x="50" y="100" width="400" height="120" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
+          <text x="250" y="124" text-anchor="middle" class="node-label" style="font-size:12.5px">Notification dedup</text>
+          <text x="250" y="142" text-anchor="middle" class="node-sub">edge-triggered, not every tick</text>
+          <text x="250" y="160" text-anchor="middle" class="node-sub">Delta threshold met: false → true</text>
+          <text x="250" y="176" text-anchor="middle" class="node-sub">Saxo auth flip, either direction</text>
+          <text x="250" y="196" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">one shared state, both topics feed it</text>
 
-          <rect x="430" y="250" width="400" height="60" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
-          <text x="630" y="272" text-anchor="middle" class="node-label" style="font-size:12px">HA Supervisor proxied API</text>
-          <text x="630" y="290" text-anchor="middle" class="node-sub">homeassistant_api: true — no token needed</text>
+          <rect x="50" y="250" width="400" height="60" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="250" y="272" text-anchor="middle" class="node-label" style="font-size:12px">HA Supervisor proxied API</text>
+          <text x="250" y="290" text-anchor="middle" class="node-sub">homeassistant_api: true — no token needed</text>
 
-          <rect x="430" y="340" width="400" height="140" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
-          <text x="630" y="362" text-anchor="middle" class="node-label" style="font-size:12.5px">UI panel — 3 cards</text>
-          <text x="630" y="382" text-anchor="middle" class="node-sub">Status: pills, chart, measure cards + sparklines</text>
-          <text x="630" y="398" text-anchor="middle" class="node-sub">AI Analysis: Run button + last billed Q&amp;A</text>
-          <text x="630" y="414" text-anchor="middle" class="node-sub">Workflow History: every check, click through for detail</text>
-          <text x="630" y="434" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">Saxo pill links via a server-side relay, not tap-through</text>
-          <text x="630" y="450" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">(avoids Chrome's Local Network Access prompt)</text>
+          <rect x="50" y="340" width="400" height="140" rx="10" style="fill:var(--surface);stroke:var(--border-strong)"></rect>
+          <text x="250" y="362" text-anchor="middle" class="node-label" style="font-size:12.5px">UI panel — 3 cards</text>
+          <text x="250" y="382" text-anchor="middle" class="node-sub">Status: pills, chart, measure cards + sparklines</text>
+          <text x="250" y="398" text-anchor="middle" class="node-sub">AI Analysis: Run button + last billed Q&amp;A</text>
+          <text x="250" y="414" text-anchor="middle" class="node-sub">Workflow History: every check, click through for detail</text>
+          <text x="250" y="434" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">Saxo pill links via a server-side relay, not tap-through</text>
+          <text x="250" y="450" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">(avoids Chrome's Local Network Access prompt)</text>
 
-          <line x1="930" y1="145" x2="385" y2="145" style="stroke:var(--wire);stroke-width:1.8" marker-end="url(#f2-wire)"></line>
-          <line x1="385" y1="235" x2="925" y2="235" style="stroke:var(--wire);stroke-width:1.6" marker-end="url(#f2-wire)"></line>
-          <line x1="215" y1="190" x2="215" y2="206" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
-          <line x1="215" y1="290" x2="215" y2="316" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
-          <line x1="380" y1="150" x2="425" y2="150" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
-          <line x1="630" y1="220" x2="630" y2="246" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
-          <line x1="630" y1="310" x2="630" y2="336" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
-          <path d="M 830 400 L 1090 400 L 1090 466" style="fill:none;stroke:var(--spend);stroke-width:1.8" marker-end="url(#f2-spend)"></path>
-          <text x="960" y="392" text-anchor="middle" class="edge-label-spend">click Run AI Trend Analysis (LAN)</text>
+          <line x1="930" y1="145" x2="835" y2="145" style="stroke:var(--wire);stroke-width:1.8" marker-end="url(#f2-wire)"></line>
+          <line x1="835" y1="235" x2="925" y2="235" style="stroke:var(--wire);stroke-width:1.6" marker-end="url(#f2-wire)"></line>
+          <line x1="665" y1="190" x2="665" y2="206" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="665" y1="290" x2="665" y2="316" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
+          <line x1="500" y1="150" x2="455" y2="150" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="250" y1="220" x2="250" y2="246" style="stroke:var(--wire);stroke-width:1.4" marker-end="url(#f2-wire)"></line>
+          <line x1="250" y1="310" x2="250" y2="336" style="stroke:var(--wire);stroke-width:1.4;stroke-dasharray:3 2" marker-end="url(#f2-wire)"></line>
+          <path d="M 250 480 L 250 495 L 1090 495 L 1090 466" style="fill:none;stroke:var(--spend);stroke-width:1.8" marker-end="url(#f2-spend)"></path>
+          <text x="670" y="490" text-anchor="middle" class="edge-label-spend">click Run AI Trend Analysis (LAN)</text>
         </svg>
       </figure>
     </div>
