@@ -49,6 +49,17 @@ SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "").strip() or "XAGUSD"
 NOTIFY_SERVICE = os.environ.get("NOTIFY_SERVICE", "").strip()
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
+# Trigger thresholds + the Claude system prompt, pushed to the Workflow
+# Service's own App_Data config rather than passed per-request - it's the
+# autonomous background loop that needs these, and that loop is entirely
+# inside the Workflow Service, never driven by a request from here. Each
+# is blank by default (don't override whatever the Workflow Service
+# already has configured).
+PRICE_MOVE_THRESHOLD_PERCENT = os.environ.get("PRICE_MOVE_THRESHOLD_PERCENT", "").strip()
+VOLATILITY_THRESHOLD_PERCENT = os.environ.get("VOLATILITY_THRESHOLD_PERCENT", "").strip()
+SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
+CONFIG_URL = f"http://{XWEB_HOST}/claude/MarketAgent/config"
+
 TOPIC = "marketagent.preview"
 # Saxo-owned, not marketagent-owned - matches the Workflow Service's own
 # topic-prefix-as-owner convention. Pushed the moment SaxoAuthService's
@@ -409,6 +420,47 @@ def trigger_real_run():
         return False, f"Could not reach the Workflow Service: {e}"
 
 
+def _push_agent_config():
+    """Pushes configured thresholds/prompt to the Workflow Service's
+    unified config endpoint. Called from _on_open - on every (re)connect,
+    not just once at add-on startup. That's what makes this self-healing:
+    an xWeb redeploy wipes its own App_Data (including this config), but
+    the same redeploy also drops this connection, so the very next
+    reconnect re-pushes it automatically - no restart of this add-on
+    required. Covers a HA config change too, since saving one restarts
+    this add-on, and startup is itself a first connect.
+
+    Fields left blank in this add-on's own config are omitted from the
+    body entirely, not sent as nulls - the Workflow Service only merges
+    in fields actually present, so an unconfigured field here just
+    leaves whatever it already has untouched. Best-effort like notify():
+    a failed push must never take down the subscriber thread.
+    """
+    body = {}
+    if PRICE_MOVE_THRESHOLD_PERCENT:
+        try:
+            body["priceMoveThresholdPercent"] = float(PRICE_MOVE_THRESHOLD_PERCENT)
+        except ValueError:
+            log.warning("price_move_threshold_percent is not a number: %r", PRICE_MOVE_THRESHOLD_PERCENT)
+    if VOLATILITY_THRESHOLD_PERCENT:
+        try:
+            body["volatilityThresholdPercent"] = float(VOLATILITY_THRESHOLD_PERCENT)
+        except ValueError:
+            log.warning("volatility_threshold_percent is not a number: %r", VOLATILITY_THRESHOLD_PERCENT)
+    if SYSTEM_PROMPT:
+        body["systemPrompt"] = SYSTEM_PROMPT
+    if not body:
+        return
+
+    payload = json.dumps(body).encode()
+    req = urllib.request.Request(CONFIG_URL, data=payload, method="POST",
+                                  headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=10).close()
+    except Exception as e:
+        log.warning("push agent config failed: %s", e)
+
+
 def _connect_once():
     """Build, start, and block on one hub connection until it closes for
     good. Returns when there's nothing more this connection can do -
@@ -450,6 +502,12 @@ def _connect_once():
         # 5-minute poll, or saxo.authstatus's next login/refresh event.
         hub.send("RequestLatest", [TOPIC])
         hub.send("RequestLatest", [AUTH_TOPIC])
+        # Self-healing config push - see _push_agent_config's own docstring
+        # for why this belongs on every (re)connect, not just once at
+        # startup. A plain HTTP call, not a hub method - has nothing to do
+        # with SignalR itself, it's just piggybacking on "a connection was
+        # just (re)established" as the trigger.
+        _push_agent_config()
 
     def _on_close():
         _set_connection_state("disconnected")

@@ -114,8 +114,8 @@ not repeated every check while it stays true.
 
 Saxo login state gets the same treatment: a push fires once when a check
 shows login is required, and once more when it resolves — covering both
-the background loop's routine checks and the manual **Run real analysis
-now** button, not just the button. The login-required push is tappable
+the background loop's routine checks and the manual **Run AI Trend
+Analysis** button, not just the button. The login-required push is tappable
 — it opens the login flow directly rather than just opening Home
 Assistant itself (that's the difference between putting a URL in the
 notification's `data.url` field, which makes it a real tap target, and
@@ -128,6 +128,29 @@ below to the exact service name (HA Developer Tools → **Actions** →
 search `notify`) and pushes start working. Until it's set, pushes are
 silently skipped — everything else still works.
 
+## Trigger settings
+
+`price_move_threshold_percent`, `volatility_threshold_percent`, and
+`system_prompt` (below) let you adjust the background loop's trigger
+thresholds and the Claude system prompt without touching the Workflow
+Service directly. Leave any of them blank to leave the Workflow
+Service's own value untouched.
+
+This add-on pushes whatever's configured to the Workflow Service on
+every SignalR connect or reconnect — not just once at startup. That's
+deliberate, not incidental: a Workflow Service redeploy wipes its own
+config the same way it wipes everything else that isn't on a persistent
+volume, but that redeploy also drops this add-on's connection, so the
+very next reconnect re-pushes the configured values automatically. A HA
+config change reaches the Workflow Service the same way — saving add-on
+options restarts it, and startup is itself a first connect. One
+mechanism covers both cases; there's nothing to click and nothing to
+remember.
+
+There is currently no way to adjust `volume_multiplier` this way, because
+there's no longer a multiplier to adjust — Volume was removed from the
+trigger entirely, see "Workflow detail" below.
+
 ## Workflow detail
 
 Click any row in **Workflow History** for that check's full data — every
@@ -139,45 +162,30 @@ this — the full payload was already being persisted per check, this just
 exposes it.
 
 **Three measure cards up top (Price move / Volatility / Volume), side by
-side** — each shows the measured value, its configured threshold, and
-whether it's currently **over threshold** or **under threshold** (straight
-from the Workflow Service's own `Reasons`, not re-derived here — the same
-consistent pair for all three measures, including Volume, whose "threshold"
-is really the baseline times a configured multiplier). Being over threshold
-only means this measure is one reason **Delta threshold met** is "yes" for
-this check — it does not mean a Claude call happened.
+side.** Price move and Volatility each show the measured value, the
+configured threshold, and whether that check was **over threshold** or
+**under threshold** (straight from the Workflow Service's own `Reasons`,
+not re-derived here). Both are computed *entirely within that check's
+own lookback window* — Price move from the window's first candle vs. its
+last, Volatility from the window's own high–low range — there's no
+persisted state involved at all, so every check, including the very
+first one ever for a symbol, evaluates the same way. Being over
+threshold just means that measure is one reason **Delta threshold met**
+is "yes" — it does not mean a Claude call happened; every background-loop
+check is a free preview, never billed, and only the **Run AI Trend
+Analysis** button actually bills one.
 
-Each card also carries a tiny trend line across the last ~12 checks (about
-an hour, at the default 5-minute cadence), with the threshold as a faint
-dashed reference — a glance at how close things have been running, not
-just this one instant. Segments from a check that was never actually
-evaluated (FirstRun — no baseline yet, so the comparison was skipped, not
-failed) are drawn faded rather than looking like a real result.
+**Volume is reported for reference only** — it's no longer part of the
+trigger at all, so its card has no threshold and no over/under status,
+just the raw measured value. Saxo doesn't report volume for OTC/FX-spot
+and precious-metals instruments in the first place, so for XAGUSD (the
+default symbol) this card normally shows "—".
 
-Every background-loop
-check is a free preview, never billed (its "Status" is never `Completed` on its
-own); Delta threshold met: yes just says a real analysis *would be worth
-running*. Only the **Run AI Trend Analysis** button actually bills one. Below
-the cards, a fuller breakdown for Price move and Volume: Price move and
-Volatility are each computed *within that check's own lookback window*
-(first candle vs. last, and the window's own high–low range) against a
-fixed threshold; only Volume actually compares against the stored
-baseline. So Price move gets a window-start-vs-end table, Volume gets a
-real baseline-vs-current table, and the baseline snapshot
-(price/volatility at the time it was last set) is shown separately as
-reference only — showing all three as if they were the same kind of
-comparison would misrepresent how the delta threshold is actually
-evaluated. A blank baseline means either this is genuinely the first
-check ever, or the Workflow Service
-restarted since the last one — its state has no persistent volume, so a
-redeploy resets it.
-
-On the very first check for a symbol there's no baseline yet, so none of
-the three comparisons run at all that check — the cards say "not
-evaluated", not a false "under threshold". Older log entries recorded
-before the Workflow Service started reporting its thresholds show
-"threshold not reported yet" instead of a number — the measured value is
-still shown either way.
+Each card also carries a tiny trend line across the last ~12 checks
+(about an hour, at the default 5-minute cadence) — Price move and
+Volatility show the threshold as a faint dashed reference so "how close"
+is visible at a glance; Volume's has no reference line, matching that it
+has no threshold.
 
 Cost is estimated locally from a small rate table keyed by model name,
 not fetched from Anthropic — there's no API for querying actual account
@@ -203,6 +211,9 @@ older links go stale and say so rather than erroring.
 | `market_agent_symbol` | `XAGUSD` | Symbol this panel tracks |
 | `notify_service` | *(empty)* | HA notify service name for pushes — pushes are silently skipped until this is set |
 | `saxo_login_url` | *(empty)* | Overrides the Saxo login link (pill + notifications) with your own WAN-reachable URL. Defaults to `http://<workflow_service_host>/saxo/login` (LAN-only) if left empty |
+| `price_move_threshold_percent` | *(empty)* | Overrides the Workflow Service's Price move trigger threshold. Leave empty to use its own configured value |
+| `volatility_threshold_percent` | *(empty)* | Overrides the Workflow Service's Volatility trigger threshold. Leave empty to use its own configured value |
+| `system_prompt` | *(empty)* | Overrides the system prompt used for the Claude call. Leave empty to use the Workflow Service's own default |
 
 ## Logs
 

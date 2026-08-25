@@ -163,28 +163,18 @@ def _reason_status(name, metrics):
     """Whether a named measure crossed its own threshold this check,
     straight from Reasons - not re-derived from the raw numbers, since
     Reasons is the Workflow Service's own authoritative answer and
-    re-deriving it here risks a rounding/edge-case mismatch.
+    re-deriving it here risks a rounding/edge-case mismatch. Only ever
+    called for PriceMove/Volatility - Volume has no threshold to be
+    over/under any more (see _render_measure_cards).
 
-    "No baseline yet" is read from BaselinePrice, not from a "FirstRun"
-    tag in Reasons - the Workflow Service only ever sets Reasons to
-    explain why a real trigger fired, so a first-ever check (nothing to
-    compare against) correctly leaves Reasons empty, same as any other
-    check where nothing crossed. BaselinePrice being null is the actual,
-    unambiguous signal that no comparison happened at all - worth saying
-    so rather than implying a comparison happened when it didn't.
-
-    Deliberately says "over threshold"/"under threshold" - a consistent,
-    self-contained pair reused as-is for all three measures (Price move/
-    Volatility's fixed percent thresholds and Volume's baseline x
-    multiplier trigger point alike) - never "triggered". Being over
-    threshold here just means this measure is one reason Delta threshold
-    met is "yes" for this check, not that any Claude call happened. Every
-    background-loop check is a free preview, never billed - only the Run
-    AI Trend Analysis button actually calls Claude, so a routine check
-    with Delta threshold met: yes has still triggered nothing on its own.
+    Deliberately says "over threshold"/"under threshold", never
+    "triggered" - being over threshold here just means this measure is
+    one reason Delta threshold met is "yes" for this check, not that any
+    Claude call happened. Every background-loop check is a free preview,
+    never billed - only the Run AI Trend Analysis button actually calls
+    Claude, so a routine check with Delta threshold met: yes has still
+    triggered nothing on its own.
     """
-    if metrics.get("BaselinePrice") is None:
-        return "not evaluated this check (first check / no baseline yet)"
     reasons = metrics.get("Reasons") or []
     return "over threshold" if name in reasons else "under threshold"
 
@@ -198,28 +188,20 @@ def _measure_card(label, value_text, sub_text, extra_cls="", spark_html=""):
 
 
 def _measure_status_cls(name, metrics):
-    status = _reason_status(name, metrics)
-    if status.startswith("over"):
-        return "hit"
-    if status.startswith("not evaluated"):
-        return "unknown"
-    return ""
+    return "hit" if _reason_status(name, metrics).startswith("over") else ""
 
 
 def _measure_points(history, field):
-    """Up to the last 12 checks' worth of `field`, oldest first, each
-    tagged 'dim' if that check had no baseline yet (BaselinePrice null,
-    same signal _reason_status uses) - a real computed number either way,
-    just never actually compared against a threshold, so the sparkline
-    fades it rather than implying a real "under threshold" result
-    happened.
+    """Up to the last 12 checks' worth of `field`, oldest first. No more
+    "not evaluated" distinction to fade - every check evaluates fully
+    now (there's no more bootstrap/baseline state to be missing).
     """
     points = []
     for e in history[-12:]:
         m = e.get("Metrics") or {}
         v = m.get(field)
         if isinstance(v, (int, float)):
-            points.append({"v": v, "dim": m.get("BaselinePrice") is None})
+            points.append({"v": v})
     return points
 
 
@@ -276,24 +258,17 @@ def _render_measure_cards(entry, history):
         pct_sub(metrics.get("AvgVolatilityPercent"), metrics.get("VolatilityThresholdPercent"), "Volatility"),
         _measure_status_cls("Volatility", metrics), vol_spark_html)
 
+    # Volume is reported but not part of the trigger any more - it isn't
+    # compared against anything, so no threshold, no over/under status, no
+    # "hit" highlighting. Saxo never reports volume at all for OTC/FX-spot
+    # and precious-metals instruments (confirmed against xWeb's own
+    # CLAUDE.md) - XAGUSD, the only symbol actually configured today, is
+    # exactly that, so this card is expected to show "—" in practice.
     avg_vol = metrics.get("AvgVolume")
-    base_vol = metrics.get("BaselineAvgVolume")
-    multiplier = metrics.get("VolumeMultiplier")
-    if isinstance(base_vol, (int, float)) and isinstance(multiplier, (int, float)):
-        volume_sub = (f"of {_fmt_num(base_vol * multiplier)} ({multiplier:g}× baseline) "
-                       f"· {_reason_status('Volume', metrics)}")
-        volume_threshold = base_vol * multiplier
-    elif isinstance(base_vol, (int, float)):
-        volume_sub = f"baseline {_fmt_num(base_vol)} · multiplier not reported yet"
-        volume_threshold = None
-    else:
-        volume_sub = "no baseline yet"
-        volume_threshold = None
-    volume_spark_html, volume_spark_js = _measure_spark(
-        history, "AvgVolume", volume_threshold, uid, "volume")
+    volume_sub = "reported, not part of the trigger" if avg_vol is not None else "no volume data for this instrument"
+    volume_spark_html, volume_spark_js = _measure_spark(history, "AvgVolume", None, uid, "volume")
     spark_js_parts.append(volume_spark_js)
-    volume_card = _measure_card(
-        "Volume", _fmt_num(avg_vol), volume_sub, _measure_status_cls("Volume", metrics), volume_spark_html)
+    volume_card = _measure_card("Volume", _fmt_num(avg_vol), volume_sub, "", volume_spark_html)
 
     spark_js = "".join(p for p in spark_js_parts if p)
     script_block = f"<script>{CHART_JS_FN}\n{spark_js}</script>" if spark_js else ""
@@ -301,15 +276,14 @@ def _render_measure_cards(entry, history):
 
 
 def _render_trigger_detail(entry, history):
-    """Price move and Volatility are computed *within this window itself*
-    (first candle vs last, and the window's own high-low range) against a
-    fixed threshold - NOT a comparison to the stored baseline, however
-    natural that assumption is. Only Volume actually compares against the
-    baseline (this window's average vs. the baseline average x a
-    multiplier) - confirmed directly against MarketTriggerAnalysis.Evaluate
-    in Model.Core, not assumed. Built as three clearly separate sections
-    instead of one flat table so this distinction is visible rather than
-    implied.
+    """All three measures are computed *within this window itself* (first
+    candle vs last for Price move, the window's own high-low range for
+    Volatility) against a fixed threshold - there's no persisted baseline
+    anywhere in the trigger logic any more (removed 2026-08-25: it never
+    survived a Workflow Service restart anyway, which is what caused the
+    original "stuck at FirstRun forever" bug this whole feature grew out
+    of - removing the state removed the thing a restart could wipe).
+    Volume is reported for reference but doesn't feed the trigger at all.
     """
     metrics = entry.get("Metrics") or {}
     candles = entry.get("EvalCandles") or []
@@ -345,73 +319,37 @@ def _render_trigger_detail(entry, history):
     else:
         parts.append("<p class='note'>No candle data on this check to compute a window.</p>")
 
-    # --- Volatility: also window-internal, no baseline comparison exists ---
+    # --- Volatility: also window-internal ---
     parts.append("<h3>Volatility</h3>")
     parts.append(f"<p>This window's average high–low range: <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>")
     parts.append("<p class='note'>Computed within this window only - see the card above for the "
-                  "threshold it's checked against; there's no baseline volatility comparison in the "
-                  "trigger logic itself.</p>")
+                  "threshold it's checked against.</p>")
 
-    # --- Volume: the one measure that's genuinely baseline vs current ---
-    parts.append("<h3>Volume — baseline detail</h3>")
-    avg_vol, base_vol = metrics.get("AvgVolume"), metrics.get("BaselineAvgVolume")
-    multiplier = metrics.get("VolumeMultiplier")
-    if avg_vol is not None or base_vol is not None:
-        pct = ((avg_vol - base_vol) / base_vol * 100) if (
-            isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float)) and base_vol) else None
-        diff = (avg_vol - base_vol) if (isinstance(avg_vol, (int, float)) and isinstance(base_vol, (int, float))) else None
-        trigger_point = (base_vol * multiplier) if (
-            isinstance(base_vol, (int, float)) and isinstance(multiplier, (int, float))) else None
-        rows = (
-            "<table class='compare'><tr><th></th><th class='num'>Avg volume</th></tr>"
-            f"<tr><td>Baseline</td><td class='num'>{_fmt_num(base_vol)}</td></tr>")
-        if trigger_point is not None:
-            rows += f"<tr><td>Triggers above ({multiplier:g}×)</td><td class='num'>{_fmt_num(trigger_point)}</td></tr>"
-        rows += (
-            f"<tr><td>This window</td><td class='num'>{_fmt_num(avg_vol)}</td></tr>"
-            f"<tr><td>Change vs. baseline</td><td class='num'>{_fmt_signed(diff, ',.0f')} "
-            f"({_fmt_signed(pct, '.1f')}%)</td></tr>"
-            "</table>")
-        parts.append(rows)
+    # --- Volume: reported, not part of the trigger ---
+    parts.append("<h3>Volume</h3>")
+    avg_vol = metrics.get("AvgVolume")
+    if avg_vol is not None:
+        parts.append(f"<p>This window's average volume: <b>{_fmt_num(avg_vol)}</b></p>")
+        parts.append("<p class='note'>Reported for reference only - it isn't compared against "
+                      "anything and doesn't contribute to Delta threshold met.</p>")
     else:
-        parts.append("<p class='note'>No volume data for this instrument.</p>")
-
-    # --- Baseline snapshot: reference only, not live-compared for price/volatility ---
-    baseline_price = metrics.get("BaselinePrice")
-    if baseline_price is None:
-        parts.append(
-            "<h3>Baseline</h3>"
-            "<p class='note'>No baseline recorded yet - either this is genuinely the first check "
-            "ever, or the Workflow Service restarted since the last one (its state has no persistent "
-            "storage, so a redeploy resets it). The next successful check sets a fresh baseline.</p>")
-    else:
-        parts.append(
-            "<h3>Baseline (reference only)</h3>"
-            f"<table><tr><th>Recorded at</th><td>{_fmt_dt(metrics.get('BaselineTimestamp'))}</td></tr>"
-            f"<tr><th>Price then</th><td>{_fmt_price(baseline_price)}</td></tr>"
-            f"<tr><th>Volatility then</th><td>{_fmt_pct(metrics.get('BaselineAvgVolatilityPercent'))}</td></tr>"
-            "</table>"
-            "<p class='note'>From when this baseline was last set (i.e. the last time Price move/"
-            "Volatility/Volume triggered a real Claude call) - shown for context, not compared "
-            "against directly for Price move or Volatility above.</p>")
+        parts.append("<p class='note'>No volume data for this instrument (Saxo doesn't report "
+                      "volume for OTC/FX-spot and precious-metals instruments).</p>")
 
     return "".join(parts)
 
 
 def _candles_payload(entry):
-    """(candles list, candles_json, baseline_price_json) for one tick -
-    shared by the main page (latest tick) and the per-tick detail page
-    (whichever tick you clicked through to), so the chart-drawing JS only
-    needs to exist once.
+    """(candles list, candles_json) for one tick - shared by the main page
+    (latest tick) and the per-tick detail page (whichever tick you
+    clicked through to), so the chart-drawing JS only needs to exist once.
     """
     candles = entry.get("EvalCandles") or []
     candles_json = json.dumps([
         {"CloseBid": k.get("CloseBid", 0), "CloseAsk": k.get("CloseAsk", 0),
          "Time": _fmt_candle_time(k.get("Time"))}
         for k in candles])
-    baseline_price = (entry.get("Metrics") or {}).get("BaselinePrice")
-    baseline_price_json = json.dumps(baseline_price) if isinstance(baseline_price, (int, float)) else "null"
-    return candles, candles_json, baseline_price_json
+    return candles, candles_json
 
 
 def _chart_caption(entry, symbol):
@@ -427,15 +365,11 @@ def _chart_caption(entry, symbol):
     candles = entry.get("EvalCandles") or []
     if len(candles) < 2:
         return "No candle data on this check."
-    start_dt = _parse_dotnet_dt(candles[0].get("Time"))
     end_dt = _parse_dotnet_dt(candles[-1].get("Time"))
     start, end = _fmt_candle_time(candles[0].get("Time")), _fmt_candle_time(candles[-1].get("Time"))
-    baseline_price = (entry.get("Metrics") or {}).get("BaselinePrice")
 
     parts = [f"{html.escape(symbol)} mid price (bid/ask average) — "
              f"last {len(candles)} candles, {html.escape(start)}–{html.escape(end)}"]
-    if baseline_price is not None:
-        parts.append("amber dashed line is the trigger baseline")
     if end_dt is not None and end_dt.date() != datetime.now(timezone.utc).date():
         parts.append("<strong>no newer candles from Saxo since then — market is likely closed</strong>")
     return " · ".join(parts)
@@ -443,9 +377,9 @@ def _chart_caption(entry, symbol):
 
 # Shared by both PAGE and TICK_PAGE - plain JS, not run through .format()
 # itself, so braces here are normal (single), not doubled like the rest
-# of this file's templates. Takes a canvas element id plus the same
-# candles/baseline data _candles_payload() produces, draws axis labels,
-# a current-price marker, and (if given) a dashed baseline reference line.
+# of this file's templates. Takes a canvas element id plus the candles
+# _candles_payload() produces, draws axis labels and a current-price
+# marker.
 CHART_JS_FN = """
 function niceAxisStep(roughStep) {
   const mag = Math.pow(10, Math.floor(Math.log10(roughStep)));
@@ -456,7 +390,7 @@ function niceAxisStep(roughStep) {
   return mag;
 }
 
-function drawMarketChart(canvasId, candles, baselinePrice) {
+function drawMarketChart(canvasId, candles) {
   const c = document.getElementById(canvasId);
   if (!c || candles.length < 2 || !c.getContext) return;
   const ctx = c.getContext('2d');
@@ -469,7 +403,6 @@ function drawMarketChart(canvasId, candles, baselinePrice) {
   const vals = candles.map(k => (k.CloseBid + k.CloseAsk) / 2);
   const padL = 62, padR = 10, padT = 10, padB = 20;
   let dataMin = Math.min(...vals), dataMax = Math.max(...vals);
-  if (baselinePrice !== null) { dataMin = Math.min(dataMin, baselinePrice); dataMax = Math.max(dataMax, baselinePrice); }
   if (dataMax === dataMin) { dataMax += 1; dataMin -= 1; }
 
   // "Nice" round-number gridlines (Heckbert's algorithm) instead of just
@@ -494,16 +427,6 @@ function drawMarketChart(canvasId, candles, baselinePrice) {
     ctx.globalAlpha = 1; ctx.fillStyle = muted;
     ctx.fillText(v.toFixed(decimals), padL - 8, y(v));
   });
-
-  if (baselinePrice !== null) {
-    ctx.save();
-    ctx.strokeStyle = '#b26a00'; ctx.globalAlpha = .6; ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    ctx.beginPath(); ctx.moveTo(padL, y(baselinePrice)); ctx.lineTo(cssW - padR, y(baselinePrice)); ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = '#b26a00'; ctx.textAlign = 'left'; ctx.globalAlpha = 1;
-    ctx.fillText('baseline ' + baselinePrice.toFixed(4), padL + 4, y(baselinePrice) - 6);
-  }
 
   ctx.strokeStyle = '#4a90d9';
   ctx.lineWidth = 1.6;
@@ -538,11 +461,9 @@ function drawMarketChart(canvasId, candles, baselinePrice) {
 
 // Tiny inline trend line for one measure-card - recent values only, no
 // axis/labels at all (kept deliberately minimal so the card doesn't grow).
-// `points` is [{v, dim}], oldest first - dim marks a check that was never
-// actually compared against a threshold (FirstRun), drawn faded rather
-// than looking like a real "under threshold" result. `threshold`, if not
-// null, draws as a flat dashed reference line so "how close" is visible
-// at a glance.
+// `points` is [{v}], oldest first. `threshold`, if not null, draws as a
+// flat dashed reference line so "how close" is visible at a glance -
+// null for Volume, which has no threshold to compare against any more.
 function drawSparkline(canvasId, points, threshold) {
   const c = document.getElementById(canvasId);
   if (!c || points.length < 2 || !c.getContext) return;
@@ -566,21 +487,15 @@ function drawSparkline(canvasId, points, threshold) {
     ctx.setLineDash([]);
   }
 
-  ctx.lineWidth = 1.4;
-  for (let i = 1; i < points.length; i++) {
-    ctx.strokeStyle = '#4a90d9';
-    ctx.globalAlpha = (points[i].dim || points[i - 1].dim) ? .3 : .9;
-    ctx.beginPath();
-    ctx.moveTo(x(i - 1), y(points[i - 1].v));
-    ctx.lineTo(x(i), y(points[i].v));
-    ctx.stroke();
-  }
+  ctx.strokeStyle = '#4a90d9'; ctx.globalAlpha = .9; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
+  ctx.stroke();
 
   const lastIdx = points.length - 1;
-  ctx.globalAlpha = points[lastIdx].dim ? .5 : 1;
-  ctx.fillStyle = '#4a90d9';
-  ctx.beginPath(); ctx.arc(x(lastIdx), y(points[lastIdx].v), 2, 0, 7); ctx.fill();
   ctx.globalAlpha = 1;
+  ctx.fillStyle = '#4a90d9';
+  ctx.beginPath(); ctx.arc(x(lastIdx), y(vals[lastIdx]), 2, 0, 7); ctx.fill();
 }
 """
 
@@ -719,7 +634,7 @@ a.pill:hover {{ text-decoration: underline; }}
 </div>
 <script>
 {chart_js_fn}
-drawMarketChart('chart', {candles_json}, {baseline_price_json});
+drawMarketChart('chart', {candles_json});
 </script>
 </body></html>"""
 
@@ -774,13 +689,13 @@ def _render_chart_block(entry, caption):
     """`caption` is already-safe HTML from _chart_caption() - not
     re-escaped here, same reasoning as PAGE's own chart_caption slot.
     """
-    candles, candles_json, baseline_price_json = _candles_payload(entry)
+    candles, candles_json = _candles_payload(entry)
     if len(candles) < 2:
         return f"<p>{caption}</p>"
     return (
         "<div class=\"card\"><canvas id=\"chart\"></canvas></div>"
         f"<p style=\"font-size:.8rem;opacity:.65;margin-top:-6px\">{caption}</p>"
-        f"<script>{CHART_JS_FN}\ndrawMarketChart('chart', {candles_json}, {baseline_price_json});</script>"
+        f"<script>{CHART_JS_FN}\ndrawMarketChart('chart', {candles_json});</script>"
     )
 
 
@@ -864,7 +779,7 @@ def render_page(notice=None, good=True):
         rows.append("<tr><td colspan='7'>No checks yet.</td></tr>")
 
     latest_entry = entries[-1] if entries else {}
-    candles, candles_json, baseline_price_json = _candles_payload(latest_entry)
+    candles, candles_json = _candles_payload(latest_entry)
     chart_caption = _chart_caption(latest_entry, market_agent.SYMBOL)
 
     if entries:
@@ -888,9 +803,21 @@ def render_page(notice=None, good=True):
         chart_caption=chart_caption,
         last_check_block=last_check_block,
         ai_result_block=ai_result_block,
-        baseline_price_json=baseline_price_json,
         chart_js_fn=CHART_JS_FN, font_face=FONT_FACE,
         rows="".join(rows), candles_json=candles_json)
+
+
+def _last_triggered_before(history, ts):
+    """The most recent prior check where Delta threshold met was yes -
+    computed client-side now that LastTriggered no longer exists on the
+    broadcast payload at all (removed along with the rest of the
+    persisted trigger state, 2026-08-25). We already retain the history
+    needed to derive this ourselves, so the Workflow Service doesn't
+    need to track it too.
+    """
+    prior = [e for e in history if e.get("receivedAt", 0) < ts
+             and bool((e.get("Metrics") or {}).get("Triggered"))]
+    return max(prior, key=lambda e: e.get("receivedAt", 0)) if prior else None
 
 
 def render_tick_page(ts):
@@ -913,11 +840,18 @@ def render_tick_page(ts):
     triggered = bool(metrics.get("Triggered"))
     reasons = ", ".join(metrics.get("Reasons") or []) or "—"
 
+    last_triggered = _last_triggered_before(full_history, ts)
+    if last_triggered:
+        lt_ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_triggered.get("receivedAt", 0)))
+        last_triggered_html = f"<a href='./tick?ts={last_triggered.get('receivedAt', 0)}'>{html.escape(lt_ts)}</a>"
+    else:
+        last_triggered_html = "—"
+
     rows = [
         ("Status", html.escape(str(status or "?"))),
         ("Delta threshold met", "yes" if triggered else "no"),
         ("Reasons", html.escape(reasons)),
-        ("Last threshold met before this", _fmt_dt(metrics.get("LastTriggered"))),
+        ("Last threshold met before this", last_triggered_html),
     ]
     # Token usage/cost - only ever present on a Completed (billed) tick, and
     # only once the Workflow Service actually reports them; absent today,
