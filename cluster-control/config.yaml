@@ -1,5 +1,5 @@
 name: "EasyPz Cluster Control"
-version: "2.2.4"
+version: "2.2.5"
 slug: "cluster-control"
 description: "Ansible control node for the home fleet: scheduled OS updates and k3s datastore backups, with playbooks pulled from a private git repo."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/cluster-control"

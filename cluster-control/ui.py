@@ -533,7 +533,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        for k, v in (headers or {}).items():
+        # This is a live control page - every response here reflects
+        # current playbook/run state and must never be served stale from
+        # a browser or app cache. Only /font.woff (immutable, named by
+        # content) opts back into caching by passing its own header,
+        # which overrides this default.
+        merged = {"Cache-Control": "no-store"}
+        merged.update(headers or {})
+        for k, v in merged.items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(data)
