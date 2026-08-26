@@ -473,11 +473,9 @@ content="width=device-width,initial-scale=1"><title>Ansible Cluster Control</tit
 <style>
 {font_face}
 :root {{ color-scheme: light dark; }}
-html {{ height: 100%; }}
 body {{ font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
-  background: transparent; min-height: 100%; overflow-y: auto;
-  -webkit-overflow-scrolling: touch; }}
+  background: transparent; }}
 h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 1.6rem; margin: 0 0 4px; }}
 .meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
