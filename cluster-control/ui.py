@@ -480,11 +480,12 @@ h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 1.6rem; margin: 0 0 4px; }}
 .meta {{ opacity: .7; font-size: .8rem; margin-bottom: 16px; }}
 .card {{ border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 10px; display: flex; gap: 12px;
-  align-items: center; flex-wrap: wrap; }}
-.card .txt {{ flex: 1 1 260px; min-width: 0; }}
+  padding: 12px 14px; margin-bottom: 10px; }}
+.card .txt {{ margin-bottom: 10px; }}
 .card b {{ font-size: .95rem; }}
 .card p {{ margin: 2px 0 0; font-size: .8rem; opacity: .75; }}
+.card .buttons {{ display: flex; gap: 10px; }}
+.card form {{ margin: 0; }}
 button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
   border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12);
   cursor: pointer; }}
@@ -626,7 +627,8 @@ class Handler(BaseHTTPRequestHandler):
                 "<button type='submit'{dis}>Run</button></form>".format(n=n, dis=dis))
             cards.append(
                 "<div class='card'><div class='txt'><b>{n}</b><p>{d}</p></div>"
-                "{buttons}</div>".format(n=n, d=html.escape(desc), buttons=buttons))
+                "<div class='buttons'>{buttons}</div></div>".format(
+                    n=n, d=html.escape(desc), buttons=buttons))
 
         logs = []
         for entry in recent_logs():
