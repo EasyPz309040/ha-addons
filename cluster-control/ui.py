@@ -486,7 +486,7 @@ h1 {{ font-family: 'osifont', system-ui, -apple-system, "Segoe UI", sans-serif;
 .card p {{ margin: 2px 0 0; font-size: .8rem; opacity: .75; }}
 .card .buttons {{ display: flex; gap: 10px; }}
 .card form {{ margin: 0; }}
-button {{ font: inherit; padding: 7px 16px; border-radius: 7px;
+button {{ font: inherit; padding: 8px 20px; border-radius: 999px;
   border: 1px solid rgba(127,127,127,.4); background: rgba(127,127,127,.12);
   cursor: pointer; }}
 button:hover:not(:disabled) {{ background: rgba(127,127,127,.25); }}
