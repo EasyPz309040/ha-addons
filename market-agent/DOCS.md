@@ -87,21 +87,24 @@ than waiting for the next scheduled check. Older Workflow Service
 versions without this topic fall back to inferring the pill from the
 latest preview check's own status — laggier, but still correct.
 
-Clicking the pill doesn't send your browser to the Workflow Service
-directly — it hits this add-on's own `/auth-login` route, which asks the
-Workflow Service server-side (from HAOS, a normal LAN device) where the
-login flow redirects to, and relays that straight to your browser. Two
-reasons: your browser never makes a cross-origin request to a LAN IP
-(which is exactly what trips Chrome's Local Network Access prompt when
-viewing this panel through a public hostname), and it works identically
-whether you're on the LAN or not, since it's riding the same ingress
-tunnel already getting you to this panel.
+The pill links straight to the same real, standalone login URL used for
+push notifications (see below) — not a relative path through this
+add-on's own ingress route. That used to be relayed server-side instead,
+which worked from a browser tab already logged into this same HA
+instance, but broke when tapped from inside the HA companion app: the
+pill opens with `target="_blank"`, which is what makes the app hand the
+tap off to the system browser rather than navigating its own embedded
+view — but that external context doesn't carry the ingress session's own
+auth cookie, so the relative URL hit Home Assistant's own login instead
+of ever reaching the real destination. A real absolute URL has no
+ingress session to lose, so it now works the same everywhere: tapped
+from a notification, opened in a browser, or opened from inside the app.
 
-Push notifications are different — tapped from outside any HA page
-entirely, so they still need a real, standalone URL rather than a
-relative path. That link defaults to the Workflow Service's own login
-route on `workflow_service_host` (LAN-only, zero configuration needed).
-If you want *that* link to work when tapped away from home, set
+Push notifications need a real, standalone URL too — tapped from outside
+any HA page entirely, so a relative path wouldn't resolve to anything.
+That link defaults to the Workflow Service's own login route on
+`workflow_service_host` (LAN-only, zero configuration needed). If you
+want *that* link to work when tapped away from home, set
 `auth_login_url` below to your own WAN-reachable hostname for it — that
 value lives in your own Supervisor config, not in this public repo, so
 it never puts a domain name in source.
