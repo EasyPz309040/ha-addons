@@ -186,12 +186,13 @@ preview, never billed, and only the **Run AI Trend Analysis** button
 actually bills one.
 
 **The check that (re)set the current baseline is highlighted** in
-Workflow History — a tinted row and a small **baseline** badge next to
-its time — straight from the Workflow Service's own `NewBaselinePrice`/
-`NewBaselineVolatility` fields, which are non-null only on that one
-check. Only background-loop Preview checks ever (re)set the baseline; a
-Trend Analysis run reads whatever baseline currently exists but never
-seeds or resets it.
+Workflow History — a tinted row, with its **Status** column reading
+"Baseline" instead of "Preview" — straight from the Workflow Service's
+own `NewBaselinePrice`/`NewBaselineVolatility` fields, which are non-null
+only on that one check. Only background-loop Preview checks ever (re)set
+the baseline, so "Baseline" always implies it was one - a Trend Analysis
+run reads whatever baseline currently exists but never seeds or resets
+it.
 
 **Volume is reported for reference only** — it's no longer part of the
 trigger at all, so its card has no threshold and no over/under status,

@@ -632,6 +632,7 @@ th.num {{ text-align: right; }}
 .ok {{ color: #2e7d32; font-weight: 600; }}
 .bad {{ color: #c62828; font-weight: 600; }}
 .triggered {{ color: #b26a00; font-weight: 600; }}
+.baseline-status {{ color: #039be5; font-weight: 600; }}
 .pill {{ display: inline-flex; align-items: center; gap: 6px;
   font: inherit; color: inherit; text-decoration: none; }}
 .pill::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }}
@@ -642,8 +643,6 @@ a.pill:hover {{ text-decoration: underline; }}
 .row-link {{ display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
   border-radius: 999px; background: rgba(127,127,127,.14); color: inherit;
   text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }}
-.badge {{ display: inline-block; font-size: .68rem; padding: 1px 8px; border-radius: 999px;
-  background: rgba(3,155,229,.18); color: inherit; margin-left: 4px; }}
 tr.new-baseline {{ background: rgba(3,155,229,.07); }}
 .row-link:hover, .row-link:focus-visible {{ background: rgba(3,155,229,.2); }}
 .row-link::after {{ content: "\\2192"; opacity: .55; font-size: .85em; }}
@@ -822,16 +821,15 @@ def render_page(notice=None, good=True):
         new_baseline = (metrics.get("NewBaselinePrice") is not None
                          or metrics.get("NewBaselineVolatility") is not None)
         rows.append(
-            "<tr class='{rcls}'><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a>{badge}</td>"
+            "<tr class='{rcls}'><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a></td>"
             "<td class='{cls}'>{status}</td>"
             "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
             "<td class='num'>{move}</td><td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
                 rcls="new-baseline" if new_baseline else "",
                 raw_ts=received_at,
                 ts=ts,
-                badge=" <span class='badge'>baseline</span>" if new_baseline else "",
-                cls="bad" if status == "SaxoAuthRequired" else "ok",
-                status=html.escape(str(status or "?")),
+                cls="baseline-status" if new_baseline else ("bad" if status == "SaxoAuthRequired" else "ok"),
+                status=html.escape("Baseline" if new_baseline else str(status or "?")),
                 tcls="triggered" if triggered else "",
                 trig="true" if triggered else "false",
                 reasons=html.escape(reasons),
