@@ -283,6 +283,17 @@ def _handle_auth_signal(required):
             notify("Market Agent", f"Login required: {login_url()}", url=login_url())
         elif state.get("last_auth_required") and not required:
             notify("Market Agent", "Re-authenticated - Market Agent back online.")
+            # SaxoAuthRequired ticks never touch last_triggered (see
+            # _on_preview_data), so it's frozen at whatever it was right
+            # before the outage started - if that was already True, the
+            # first real tick after reconnecting looks like "no change"
+            # to the edge-detector and gets silently suppressed, even
+            # though nothing was actually being evaluated during the gap
+            # and Triggered=true coming back is real, new information.
+            # Confirmed for real 2026-08-28: a threshold-met notification
+            # never arrived for exactly this reason. Reset here so the
+            # next real tick is always treated as a fresh transition.
+            state["last_triggered"] = False
         state["last_auth_required"] = required
         _write_state(state)
 
