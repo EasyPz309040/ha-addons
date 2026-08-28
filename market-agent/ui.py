@@ -203,9 +203,11 @@ def _measure_status_cls(name, metrics):
 
 
 def _measure_points(history, field):
-    """Up to the last 12 checks' worth of `field`, oldest first. No more
-    "not evaluated" distinction to fade - every check evaluates fully
-    now (there's no more bootstrap/baseline state to be missing).
+    """Up to the last 12 checks' worth of `field`, oldest first. No
+    "not evaluated" distinction to fade - even the tick that seeds a
+    fresh baseline still carries real Metrics (see NewBaselinePrice/
+    NewBaselineVolatility), there's no gap where a check produced no
+    usable numbers at all.
     """
     points = []
     for e in history[-12:]:
@@ -248,25 +250,33 @@ def _render_measure_cards(entry, history):
     uid = int(entry.get("receivedAt", 0) * 1000)
     spark_js_parts = []
 
-    def pct_sub(measured, threshold, name):
+    def pct_sub(threshold, name, baseline_text):
         if threshold is None:
             return "threshold not reported yet"
-        return f"of {_fmt_pct(threshold)} · {_reason_status(name, metrics)}"
+        return f"of {_fmt_pct(threshold)} · {_reason_status(name, metrics)}<br>baseline {baseline_text}"
 
     price_spark_html, price_spark_js = _measure_spark(
         history, "PriceMovePercent", metrics.get("PriceMoveThresholdPercent"), uid, "pricemove")
     spark_js_parts.append(price_spark_js)
     price_card = _measure_card(
         "Price move", _fmt_pct(metrics.get("PriceMovePercent")),
-        pct_sub(metrics.get("PriceMovePercent"), metrics.get("PriceMoveThresholdPercent"), "PriceMove"),
+        pct_sub(metrics.get("PriceMoveThresholdPercent"), "PriceMove", _fmt_price(metrics.get("BaselinePrice"))),
         _measure_status_cls("PriceMove", metrics), price_spark_html)
 
+    # VolatilityMovePercent (current vs baseline), not AvgVolatilityPercent
+    # (this window's own average) - VolatilityMovePercent is the field
+    # actually compared to VolatilityThresholdPercent since the baseline
+    # mechanism landed (2026-08-28). AvgVolatilityPercent is still shown,
+    # just in the fuller "How this was evaluated" detail below, not as
+    # this card's headline number - showing it here while comparing a
+    # different field against the threshold internally would pair the
+    # wrong two numbers together.
     vol_spark_html, vol_spark_js = _measure_spark(
-        history, "AvgVolatilityPercent", metrics.get("VolatilityThresholdPercent"), uid, "volatility")
+        history, "VolatilityMovePercent", metrics.get("VolatilityThresholdPercent"), uid, "volatility")
     spark_js_parts.append(vol_spark_js)
     vol_card = _measure_card(
-        "Volatility", _fmt_pct(metrics.get("AvgVolatilityPercent")),
-        pct_sub(metrics.get("AvgVolatilityPercent"), metrics.get("VolatilityThresholdPercent"), "Volatility"),
+        "Volatility", _fmt_pct(metrics.get("VolatilityMovePercent")),
+        pct_sub(metrics.get("VolatilityThresholdPercent"), "Volatility", _fmt_pct(metrics.get("BaselineVolatility"))),
         _measure_status_cls("Volatility", metrics), vol_spark_html)
 
     # Volume is reported but not part of the trigger any more - it isn't
@@ -288,22 +298,52 @@ def _render_measure_cards(entry, history):
 
 
 def _render_trigger_detail(entry, history):
-    """All three measures are computed *within this window itself* (first
-    candle vs last for Price move, the window's own high-low range for
-    Volatility) against a fixed threshold - there's no persisted baseline
-    anywhere in the trigger logic any more (removed 2026-08-25: it never
-    survived a Workflow Service restart anyway, which is what caused the
-    original "stuck at FirstRun forever" bug this whole feature grew out
-    of - removing the state removed the thing a restart could wipe).
-    Volume is reported for reference but doesn't feed the trigger at all.
+    """Price move and Volatility are both baseline-relative again (the
+    persisted-baseline mechanism came back 2026-08-28, on the same
+    market-agent-config.json this add-on already pushes thresholds/prompt
+    into - not the old per-symbol state file that never survived a
+    restart). Each measure card's headline number is already the field
+    actually compared to its threshold (PriceMovePercent, VolatilityMovePercent);
+    this section adds the baseline/current pair behind that number, plus
+    the window-internal candle data for reference. Volume is reported but
+    still doesn't feed the trigger at all.
     """
     metrics = entry.get("Metrics") or {}
     candles = entry.get("EvalCandles") or []
+    new_baseline_price = metrics.get("NewBaselinePrice")
+    new_baseline_vol = metrics.get("NewBaselineVolatility")
 
     parts = ["<h2>How this was evaluated</h2>", _render_measure_cards(entry, history)]
 
-    # --- Price move: window-internal, first candle vs last candle ---
-    parts.append("<h3>Price move — window detail</h3>")
+    if new_baseline_price is not None or new_baseline_vol is not None:
+        parts.append(
+            "<p class='banner notice-ok'><b>New baseline set on this check</b> - "
+            "future checks compare Price move/Volatility against the reading(s) "
+            "taken here, until the next reset.</p>")
+
+    # --- Price move: baseline vs current, the actual trigger comparison ---
+    parts.append("<h3>Price move</h3>")
+    parts.append(
+        "<table class='compare'><tr><th></th><th class='num'>Price</th></tr>"
+        f"<tr><td>Baseline</td><td class='num'>{_fmt_price(metrics.get('BaselinePrice'))}</td></tr>"
+        f"<tr><td>Current</td><td class='num'>{_fmt_price(metrics.get('CurrentPrice'))}</td></tr>"
+        f"<tr><td>Change</td><td class='num'>{_fmt_pct(metrics.get('PriceMovePercent'))}</td></tr>"
+        "</table>")
+
+    # --- Volatility: same baseline-vs-current shape ---
+    parts.append("<h3>Volatility</h3>")
+    parts.append(
+        "<table class='compare'><tr><th></th><th class='num'>Volatility</th></tr>"
+        f"<tr><td>Baseline</td><td class='num'>{_fmt_pct(metrics.get('BaselineVolatility'))}</td></tr>"
+        f"<tr><td>Current</td><td class='num'>{_fmt_pct(metrics.get('CurrentVolatilityPercent'))}</td></tr>"
+        f"<tr><td>Change</td><td class='num'>{_fmt_pct(metrics.get('VolatilityMovePercent'))}</td></tr>"
+        "</table>")
+    parts.append(f"<p class='note'>This window's average high–low range (reported for context, "
+                  f"not compared to the threshold): <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>")
+
+    # --- Price move window candles: real window data, kept for reference -
+    # no longer the same number as the Change row above (that's now
+    # baseline-relative), so labelled distinctly to avoid implying they match.
     if len(candles) >= 2:
         first, last = candles[0], candles[-1]
 
@@ -314,28 +354,18 @@ def _render_trigger_detail(entry, history):
         p0, p1 = mid(first), mid(last)
         t0, t1 = _fmt_candle_time(first.get("Time")), _fmt_candle_time(last.get("Time"))
         diff = (p1 - p0) if (p0 is not None and p1 is not None) else None
-        # Signed % computed here from p0/p1, NOT metrics["PriceMovePercent"] -
-        # that field is always Math.Abs(...) on the Workflow Service side
-        # (it's compared against a threshold as a magnitude, direction
-        # doesn't matter for triggering), so reusing it here would show
-        # "+0.60%" even on a tick where price fell - caught by testing
-        # with a real down-move before shipping, not assumed correct.
         pct = (diff / p0 * 100) if (diff is not None and p0) else None
+        parts.append("<h3>Window candles</h3>")
         parts.append(
+            "<p class='note'>This check's own eval window, first candle vs last - a different "
+            "number from Price move's Change above, which is against the baseline, not the "
+            "window's own start.</p>"
             "<table class='compare'><tr><th></th><th>Time</th><th class='num'>Price</th></tr>"
             f"<tr><td>Window start</td><td>{html.escape(t0)}</td><td class='num'>{_fmt_price(p0)}</td></tr>"
             f"<tr><td>Window end (current)</td><td>{html.escape(t1)}</td><td class='num'>{_fmt_price(p1)}</td></tr>"
             f"<tr><td>Change</td><td></td><td class='num'>{_fmt_signed(diff, '.4f')} "
             f"({_fmt_signed(pct, '.2f')}%)</td></tr>"
             "</table>")
-    else:
-        parts.append("<p class='note'>No candle data on this check to compute a window.</p>")
-
-    # --- Volatility: also window-internal ---
-    parts.append("<h3>Volatility</h3>")
-    parts.append(f"<p>This window's average high–low range: <b>{_fmt_pct(metrics.get('AvgVolatilityPercent'))}</b></p>")
-    parts.append("<p class='note'>Computed within this window only - see the card above for the "
-                  "threshold it's checked against.</p>")
 
     # --- Volume: reported, not part of the trigger ---
     parts.append("<h3>Volume</h3>")
@@ -612,6 +642,9 @@ a.pill:hover {{ text-decoration: underline; }}
 .row-link {{ display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
   border-radius: 999px; background: rgba(127,127,127,.14); color: inherit;
   text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+.badge {{ display: inline-block; font-size: .68rem; padding: 1px 8px; border-radius: 999px;
+  background: rgba(3,155,229,.18); color: inherit; margin-left: 4px; }}
+tr.new-baseline {{ background: rgba(3,155,229,.07); }}
 .row-link:hover, .row-link:focus-visible {{ background: rgba(3,155,229,.2); }}
 .row-link::after {{ content: "\\2192"; opacity: .55; font-size: .85em; }}
 </style></head><body>
@@ -678,6 +711,10 @@ table.compare td.num, table.compare th.num {{ text-align: right; font-variant-nu
 h2 {{ font-size: .95rem; margin: 20px 0 8px; }}
 h3 {{ font-size: .85rem; margin: 16px 0 6px; opacity: .85; }}
 .note {{ font-size: .78rem; opacity: .65; margin: -8px 0 14px; }}
+.banner {{ padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+  font-size: .85rem; border: 1px solid rgba(127,127,127,.35);
+  background: rgba(127,127,127,.08); }}
+.notice-ok {{ background: rgba(46,125,50,.14); }}
 .measures {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px; margin-bottom: 14px; }}
 .measure-card {{ border: 1px solid rgba(127,127,127,.25); border-radius: 8px;
@@ -777,19 +814,29 @@ def render_page(notice=None, good=True):
         reasons = ", ".join(metrics.get("Reasons") or [])
         received_at = e.get("receivedAt", 0)
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(received_at))
+        # NewBaselinePrice/NewBaselineVolatility are non-null only on the
+        # Preview tick that just (re)established the baseline - flagging
+        # it here is what lets you tell, at a glance, which check the
+        # other rows' baseline-relative numbers are actually measured
+        # against.
+        new_baseline = (metrics.get("NewBaselinePrice") is not None
+                         or metrics.get("NewBaselineVolatility") is not None)
         rows.append(
-            "<tr><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a></td><td class='{cls}'>{status}</td>"
+            "<tr class='{rcls}'><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a>{badge}</td>"
+            "<td class='{cls}'>{status}</td>"
             "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
             "<td class='num'>{move}</td><td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
+                rcls="new-baseline" if new_baseline else "",
                 raw_ts=received_at,
                 ts=ts,
+                badge=" <span class='badge'>baseline</span>" if new_baseline else "",
                 cls="bad" if status == "SaxoAuthRequired" else "ok",
                 status=html.escape(str(status or "?")),
                 tcls="triggered" if triggered else "",
                 trig="true" if triggered else "false",
                 reasons=html.escape(reasons),
                 move=_fmt_pct(metrics.get("PriceMovePercent")),
-                vol=_fmt_pct(metrics.get("AvgVolatilityPercent")),
+                vol=_fmt_pct(metrics.get("VolatilityMovePercent")),
                 volume=_fmt_num(metrics.get("AvgVolume"))))
     if not rows:
         rows.append("<tr><td colspan='7'>No checks yet.</td></tr>")

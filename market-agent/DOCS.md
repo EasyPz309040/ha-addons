@@ -166,17 +166,32 @@ exposes it.
 
 **Three measure cards up top (Price move / Volatility / Volume), side by
 side.** Price move and Volatility each show the measured value, the
-configured threshold, and whether that check was **over threshold** or
+configured threshold, whether that check was **over threshold** or
 **under threshold** (straight from the Workflow Service's own `Reasons`,
-not re-derived here). Both are computed *entirely within that check's
-own lookback window* — Price move from the window's first candle vs. its
-last, Volatility from the window's own high–low range — there's no
-persisted state involved at all, so every check, including the very
-first one ever for a symbol, evaluates the same way. Being over
-threshold just means that measure is one reason **Trigger** is `true` —
-it does not mean a Claude call happened; every background-loop check is
-a free preview, never billed, and only the **Run AI Trend Analysis**
-button actually bills one.
+not re-derived here), and the **baseline** value that measurement was
+actually taken against. Both are baseline-relative — % change of the
+current reading vs. a persisted baseline, not anything computed purely
+from that check's own candle window. The baseline is seeded from the
+first-ever check for a symbol (which never triggers on that same call
+unless the window's own move already exceeds threshold), and resets to
+the current reading every time a threshold trip fires — so the "baseline"
+line on each card is whichever earlier check most recently reset it, not
+a fixed reference point. It's persisted in the same
+`market-agent-config.json` this add-on's own threshold/prompt pushes
+already write to (see "Trigger settings" above), so it survives a
+Workflow Service redeploy the same way those do. Being over threshold
+just means that measure is one reason **Trigger** is `true` — it does
+not mean a Claude call happened; every background-loop check is a free
+preview, never billed, and only the **Run AI Trend Analysis** button
+actually bills one.
+
+**The check that (re)set the current baseline is highlighted** in
+Workflow History — a tinted row and a small **baseline** badge next to
+its time — straight from the Workflow Service's own `NewBaselinePrice`/
+`NewBaselineVolatility` fields, which are non-null only on that one
+check. Only background-loop Preview checks ever (re)set the baseline; a
+Trend Analysis run reads whatever baseline currently exists but never
+seeds or resets it.
 
 **Volume is reported for reference only** — it's no longer part of the
 trigger at all, so its card has no threshold and no over/under status,
