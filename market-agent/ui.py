@@ -180,11 +180,11 @@ def _reason_status(name, metrics):
 
     Deliberately says "over threshold"/"under threshold", never
     "triggered" - being over threshold here just means this measure is
-    one reason Delta threshold met is "yes" for this check, not that any
-    Claude call happened. Every background-loop check is a free preview,
-    never billed - only the Run AI Trend Analysis button actually calls
-    Claude, so a routine check with Delta threshold met: yes has still
-    triggered nothing on its own.
+    one reason Trigger is "true" for this check, not that any Claude
+    call happened. Every background-loop check is a free preview, never
+    billed - only the Run AI Trend Analysis button actually calls
+    Claude, so a routine check with Trigger: true has still triggered
+    nothing on its own.
     """
     reasons = metrics.get("Reasons") or []
     return "over threshold" if name in reasons else "under threshold"
@@ -343,7 +343,7 @@ def _render_trigger_detail(entry, history):
     if avg_vol is not None:
         parts.append(f"<p>This window's average volume: <b>{_fmt_num(avg_vol)}</b></p>")
         parts.append("<p class='note'>Reported for reference only - it isn't compared against "
-                      "anything and doesn't contribute to Delta threshold met.</p>")
+                      "anything and doesn't contribute to Trigger.</p>")
     else:
         parts.append("<p class='note'>No volume data for this instrument (the upstream data "
                       "source doesn't report volume for OTC/FX-spot and precious-metals "
@@ -642,7 +642,7 @@ a.pill:hover {{ text-decoration: underline; }}
 <div class="card">
 <h2>Workflow History</h2>
 <div class="table-scroll">
-<table><tr><th>Time</th><th>Status</th><th>Delta threshold met</th><th>Reasons</th>
+<table><tr><th>Time</th><th>Status</th><th>Trigger</th><th>Reasons</th>
 <th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
 </table>
@@ -786,7 +786,7 @@ def render_page(notice=None, good=True):
                 cls="bad" if status == "SaxoAuthRequired" else "ok",
                 status=html.escape(str(status or "?")),
                 tcls="triggered" if triggered else "",
-                trig="yes" if triggered else "no",
+                trig="true" if triggered else "false",
                 reasons=html.escape(reasons),
                 move=_fmt_pct(metrics.get("PriceMovePercent")),
                 vol=_fmt_pct(metrics.get("AvgVolatilityPercent")),
@@ -824,7 +824,7 @@ def render_page(notice=None, good=True):
 
 
 def _last_triggered_before(history, ts):
-    """The most recent prior check where Delta threshold met was yes -
+    """The most recent prior check where Trigger was true -
     computed client-side now that LastTriggered no longer exists on the
     broadcast payload at all (removed along with the rest of the
     persisted trigger state, 2026-08-25). We already retain the history
@@ -865,9 +865,9 @@ def render_tick_page(ts):
 
     rows = [
         ("Status", html.escape(str(status or "?"))),
-        ("Delta threshold met", "yes" if triggered else "no"),
+        ("Trigger", "true" if triggered else "false"),
         ("Reasons", html.escape(reasons)),
-        ("Last threshold met before this", last_triggered_html),
+        ("Last trigger before this", last_triggered_html),
     ]
     # Token usage/cost - only ever present on a Completed (billed) tick, and
     # only once the Workflow Service actually reports them; absent today,

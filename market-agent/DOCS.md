@@ -173,10 +173,10 @@ own lookback window* — Price move from the window's first candle vs. its
 last, Volatility from the window's own high–low range — there's no
 persisted state involved at all, so every check, including the very
 first one ever for a symbol, evaluates the same way. Being over
-threshold just means that measure is one reason **Delta threshold met**
-is "yes" — it does not mean a Claude call happened; every background-loop
-check is a free preview, never billed, and only the **Run AI Trend
-Analysis** button actually bills one.
+threshold just means that measure is one reason **Trigger** is `true` —
+it does not mean a Claude call happened; every background-loop check is
+a free preview, never billed, and only the **Run AI Trend Analysis**
+button actually bills one.
 
 **Volume is reported for reference only** — it's no longer part of the
 trigger at all, so its card has no threshold and no over/under status,
