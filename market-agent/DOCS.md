@@ -226,7 +226,7 @@ older links go stale and say so rather than erroring.
 
 | Option | Default | Purpose |
 |---|---|---|
-| `workflow_service_host` | `192.168.0.201` | LAN address of the Workflow Service |
+| `workflow_service_host` | `xweb.kumuruku.com` | LAN hostname of the Workflow Service (HTTPS) |
 | `market_agent_symbol` | `XAGUSD` | Symbol this panel tracks |
 | `notify_service` | *(empty)* | HA notify service name for pushes — pushes are silently skipped until this is set |
 | `auth_login_url` | *(empty)* | Overrides the login link (pill + notifications) with your own WAN-reachable URL. Defaults to the Workflow Service's own login route on `workflow_service_host` (LAN-only) if left empty |

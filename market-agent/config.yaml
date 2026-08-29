@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.23.1"
+version: "1.24.0"
 slug: "market-agent"
 description: "Live view of the Workflow Service's Market Agent loop: price chart, recent checks, and an on-demand real analysis run, with push notifications when the movement threshold is met."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
@@ -17,7 +17,7 @@ homeassistant_api: true
 map:
   - share:rw
 options:
-  workflow_service_host: "192.168.0.201"
+  workflow_service_host: "xweb.kumuruku.com"
   market_agent_symbol: "XAGUSD"
   notify_service: ""
   auth_login_url: ""

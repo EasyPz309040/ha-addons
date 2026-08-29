@@ -42,9 +42,17 @@ log = logging.getLogger("market_agent")
 # falls back when the var is absent, not when it's present-but-blank. A
 # blank workflow_service_host config value (e.g. from the xweb_host ->
 # workflow_service_host rename not being re-entered after updating)
-# would otherwise silently produce a malformed "http:///saxo/login" URL -
+# would otherwise silently produce a malformed "https:///saxo/login" URL -
 # real failure mode, not hypothetical, caught after a user report.
-XWEB_HOST = os.environ.get("XWEB_HOST", "").strip() or "192.168.0.201"
+#
+# xweb.kumuruku.com, not the old 192.168.0.201 - the Workflow Service's
+# xweb-lan Service stopped being directly LAN-reachable on 2026-08-29 in
+# favor of a real, LAN-only, HTTPS Traefik Ingress (lan-only Middleware +
+# a genuine Let's Encrypt certificate, same as pihole/cows/rancher). This
+# add-on's own workflow_service_host config still defaults to whichever
+# hostname is actually reachable, so nothing but this one default value
+# needed to change here.
+XWEB_HOST = os.environ.get("XWEB_HOST", "").strip() or "xweb.kumuruku.com"
 SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "").strip() or "XAGUSD"
 NOTIFY_SERVICE = os.environ.get("NOTIFY_SERVICE", "").strip()
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
@@ -58,7 +66,7 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 PRICE_MOVE_THRESHOLD_PERCENT = os.environ.get("PRICE_MOVE_THRESHOLD_PERCENT", "").strip()
 VOLATILITY_THRESHOLD_PERCENT = os.environ.get("VOLATILITY_THRESHOLD_PERCENT", "").strip()
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
-CONFIG_URL = f"http://{XWEB_HOST}/claude/MarketAgent/config"
+CONFIG_URL = f"https://{XWEB_HOST}/claude/MarketAgent/config"
 
 TOPIC = "marketagent.preview"
 # The Workflow Service's own auth-status topic - the literal name below
@@ -72,19 +80,21 @@ TOPIC = "marketagent.preview"
 # the auth pill react immediately to a login instead of waiting for the
 # next preview tick.
 AUTH_TOPIC = "saxo.authstatus"
-HUB_URL = f"http://{XWEB_HOST}/streamHub"
+HUB_URL = f"https://{XWEB_HOST}/streamHub"
 # Fallback chain, used only until the Workflow Service's own broadcast
 # carries a PublicLoginUrl (see _public_login_url below - that's the
 # preferred source once it's actually arriving). No domain name belongs
-# in this repo's source - it's public. Defaults to XWEB_HOST (LAN-only,
-# but zero configuration needed). A user who wants this link to survive
-# being tapped from a notification away from home, before the Workflow
-# Service side of this is live, can set auth_login_url in the add-on's
-# own config to their own WAN hostname - that value lives in their
-# Supervisor's stored config, never in git, so it never puts a domain in
-# the repo either way.
+# in this repo's source - it's public. Defaults to XWEB_HOST (LAN-only
+# via the lan-only Middleware on xweb.kumuruku.com's own Ingress - tapping
+# this link from off the LAN gets a 403 there, same practical limitation
+# as before when it was just an unreachable LAN IP, not a new one). A
+# user who wants this link to survive being tapped from a notification
+# away from home, before the Workflow Service side of this is live, can
+# set auth_login_url in the add-on's own config to their own WAN hostname
+# - that value lives in their Supervisor's stored config, never in git,
+# so it never puts a domain in the repo either way.
 _AUTH_LOGIN_URL_OVERRIDE = os.environ.get("AUTH_LOGIN_URL", "").strip()
-_AUTH_LOGIN_URL_FALLBACK = _AUTH_LOGIN_URL_OVERRIDE or f"http://{XWEB_HOST}/saxo/login"
+_AUTH_LOGIN_URL_FALLBACK = _AUTH_LOGIN_URL_OVERRIDE or f"https://{XWEB_HOST}/saxo/login"
 
 _public_login_url = None  # latest PublicLoginUrl seen on a broadcast, if any
 _public_login_url_lock = threading.Lock()
@@ -396,7 +406,7 @@ def trigger_real_run():
     a manual click getting a 401 is the clearest, most immediate signal
     that the token is actually missing right now.
     """
-    url = f"http://{XWEB_HOST}/claude/MarketAgent?symbols={SYMBOL}&preview=false"
+    url = f"https://{XWEB_HOST}/claude/MarketAgent?symbols={SYMBOL}&preview=false"
     req = urllib.request.Request(url, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -460,7 +470,11 @@ def _connect_once():
     _set_connection_state("connecting")
     closed = threading.Event()
     hub = (HubConnectionBuilder()
-           .with_url(HUB_URL, options={"verify_ssl": False})
+           # No verify_ssl override any more - HUB_URL is https:// against a
+           # real Let's Encrypt certificate now (xweb.kumuruku.com's Traefik
+           # Ingress, since 2026-08-29), not a bare LAN IP that would have
+           # needed one.
+           .with_url(HUB_URL)
            .with_automatic_reconnect({
                "type": "raw",
                "keep_alive_interval": 10,
