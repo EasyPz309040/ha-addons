@@ -17,8 +17,15 @@ ARG BUILD_VERSION
 # Alpine's own mirrors. --break-system-packages: Alpine's system Python
 # enforces PEP 668 (externally-managed-environment); there's no competing
 # system package to protect here, this is a single-purpose container.
+# Pinned, not left floating - an unpinned install silently freezes whatever
+# was latest at build time into the image forever (this add-on's own
+# version is what triggers a rebuild, not a signalrcore release), so a
+# bug fixed upstream stays broken here until someone happens to bump this
+# pin and force a fresh build. 1.0.2 confirmed working against xWeb's real
+# streamHub endpoint (negotiate, wss:// upgrade, handshake, stays
+# connected) - verified directly, not assumed.
 RUN apk add --no-cache python3 py3-pip && \
-    pip install --no-cache-dir --break-system-packages signalrcore
+    pip install --no-cache-dir --break-system-packages signalrcore==1.0.2
 
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="addon" \
