@@ -34,7 +34,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from pydantic import ValidationError
 from signalrcore.hub_connection_builder import HubConnectionBuilder
+
+from models import MarketWorkflowResult, SaxoAuthStatus
 
 log = logging.getLogger("market_agent")
 
@@ -327,6 +330,14 @@ def _on_data(args):
 
 
 def _on_preview_data(result):
+    # Validated against models.MarketWorkflowResult (mirrored from
+    # Model.Core, see that file's own docstring for why it's hand-written
+    # rather than generated) before anything downstream trusts a single
+    # field off it - a rename/type change on xWeb's side now fails loudly
+    # here instead of silently producing None everywhere it's read. The
+    # *stored* entry stays the original raw dict, unvalidated fields and
+    # all - ui.py and every existing history file already depend on that
+    # exact shape, and validating doesn't mean narrowing what's kept.
     entry = dict(result)
     entry["receivedAt"] = time.time()
     _append(entry)
@@ -335,19 +346,17 @@ def _on_preview_data(result):
     with _last_data_at_lock:
         _last_data_at = entry["receivedAt"]
 
-    # PascalCase throughout - MarketWorkflowResult/TriggerMetrics have no
-    # [JsonProperty] overrides, so JsonConvert.SerializeObject emits keys
-    # matching the C# property names exactly (Status, Metrics.Triggered,
-    # Metrics.Reasons, ...). This is NOT the same casing as the HTTP
-    # endpoint (/claude/MarketAgent), which goes through a different
-    # serializer configured for camelCase - don't copy field names from
-    # one to the other.
-    status = result.get("Status")
-    auth_required = status == "SaxoAuthRequired"
-    metrics = result.get("Metrics") or {}
-    triggered = bool(metrics.get("Triggered"))
+    try:
+        parsed = MarketWorkflowResult.model_validate(result)
+    except ValidationError as e:
+        log.error("marketagent.preview payload failed schema validation: %s", e)
+        return
 
-    _update_public_login_url(result.get("PublicLoginUrl"))
+    auth_required = parsed.status == "SaxoAuthRequired"
+    metrics = parsed.metrics
+    triggered = bool(metrics and metrics.triggered)
+
+    _update_public_login_url(parsed.public_login_url)
     _handle_auth_signal(auth_required)
 
     with _state_lock:
@@ -357,7 +366,7 @@ def _on_preview_data(result):
         # many auth-required ticks happen before someone logs back in.
         if not auth_required:
             if triggered and not state.get("last_triggered"):
-                reasons = ", ".join(metrics.get("Reasons") or [])
+                reasons = ", ".join((metrics.reasons if metrics else None) or [])
                 notify("Market Agent",
                        f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
             state["last_triggered"] = triggered
@@ -366,8 +375,9 @@ def _on_preview_data(result):
 
 def _on_auth_status_data(result):
     """saxo.authstatus - see AUTH_TOPIC's own comment for why this
-    exists. Also PascalCase (SaxoAuthStatus in Model.Core, same
-    JsonConvert.SerializeObject as marketagent.preview).
+    exists. Validated against models.SaxoAuthStatus, which is
+    hand-maintained (not derived from an OpenAPI schema - xWeb has no
+    REST endpoint for this class, see that model's own docstring).
     """
     entry = dict(result)
     entry["receivedAt"] = time.time()
@@ -375,8 +385,14 @@ def _on_auth_status_data(result):
     with _auth_status_lock:
         _last_auth_status = entry
 
-    _update_public_login_url(result.get("PublicLoginUrl"))
-    _handle_auth_signal(not result.get("Authenticated"))
+    try:
+        parsed = SaxoAuthStatus.model_validate(result)
+    except ValidationError as e:
+        log.error("saxo.authstatus payload failed schema validation: %s", e)
+        return
+
+    _update_public_login_url(parsed.public_login_url)
+    _handle_auth_signal(not parsed.authenticated)
 
 
 # resolve_auth_login_redirect()/_NoRedirect, and the /auth-login ingress

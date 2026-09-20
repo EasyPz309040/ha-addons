@@ -24,8 +24,12 @@ ARG BUILD_VERSION
 # pin and force a fresh build. 1.0.2 confirmed working against xWeb's real
 # streamHub endpoint (negotiate, wss:// upgrade, handshake, stays
 # connected) - verified directly, not assumed.
+#
+# pydantic: validates every streamHub payload against models.py's schema
+# (mirrored from xWeb's Model.Core) before market_agent.py trusts a single
+# field off it. Pinned for the same reason as signalrcore above.
 RUN apk add --no-cache python3 py3-pip && \
-    pip install --no-cache-dir --break-system-packages signalrcore==1.0.2
+    pip install --no-cache-dir --break-system-packages signalrcore==1.0.2 pydantic==2.13.5
 
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="addon" \
@@ -34,6 +38,7 @@ LABEL io.hass.version="${BUILD_VERSION}" \
 COPY run.sh /run.sh
 COPY ui.py /usr/bin/ui.py
 COPY market_agent.py /usr/bin/market_agent.py
+COPY models.py /usr/bin/models.py
 COPY osifont-lgpl3fe.woff /usr/bin/osifont-lgpl3fe.woff
 RUN chmod a+x /run.sh /usr/bin/ui.py
 
