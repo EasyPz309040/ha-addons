@@ -1,0 +1,6 @@
+#!/bin/sh
+# Regenerates the HomeLab workspace's solution-files export (Home + ha-addons +
+# PiCluster) to Downloads after every commit in this repo. Needs core.hooksPath
+# set to .githooks (git config core.hooksPath .githooks) and the dotnet SDK on
+# PATH; requires D:/GitSource/xCalc/Scripts/Scripts.csproj to exist.
+dotnet run --project D:/GitSource/xCalc/Scripts/Scripts.csproj -- --workspace HomeLab
