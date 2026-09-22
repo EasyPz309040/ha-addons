@@ -675,7 +675,7 @@ tr.new-baseline {{ background: rgba(3,155,229,.07); }}
 <h2>Workflow History</h2>
 <div class="table-scroll">
 <table><tr><th>Time</th><th>Status</th><th>Trigger</th><th>Reasons</th>
-<th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
+<th class="num">Baseline</th><th class="num">Price move</th><th class="num">Volatility</th><th class="num">Volume</th></tr>
 {rows}
 </table>
 </div>
@@ -824,7 +824,8 @@ def render_page(notice=None, good=True):
             "<tr class='{rcls}'><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a></td>"
             "<td class='{cls}'>{status}</td>"
             "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
-            "<td class='num'>{move}</td><td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
+            "<td class='num'>{baseline}</td><td class='num'>{move}</td>"
+            "<td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
                 rcls="new-baseline" if new_baseline else "",
                 raw_ts=received_at,
                 ts=ts,
@@ -833,11 +834,12 @@ def render_page(notice=None, good=True):
                 tcls="triggered" if triggered else "",
                 trig="true" if triggered else "false",
                 reasons=html.escape(reasons),
+                baseline=_fmt_price(metrics.get("BaselinePrice")),
                 move=_fmt_pct(metrics.get("PriceMovePercent")),
                 vol=_fmt_pct(metrics.get("VolatilityMovePercent")),
                 volume=_fmt_num(metrics.get("AvgVolume"))))
     if not rows:
-        rows.append("<tr><td colspan='7'>No checks yet.</td></tr>")
+        rows.append("<tr><td colspan='8'>No checks yet.</td></tr>")
 
     latest_entry = entries[-1] if entries else {}
     candles, candles_json = _candles_payload(latest_entry)
