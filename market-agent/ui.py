@@ -810,7 +810,7 @@ def render_page(notice=None, good=True):
         status = e.get("Status")
         metrics = e.get("Metrics") or {}
         triggered = bool(metrics.get("Triggered"))
-        reasons = ", ".join(metrics.get("Reasons") or [])
+        reasons = market_agent.describe_reasons(metrics.get("Reasons"), metrics.get("PriceMovePercent"))
         received_at = e.get("receivedAt", 0)
         ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(received_at))
         # NewBaselinePrice/NewBaselineVolatility are non-null only on the
@@ -901,7 +901,7 @@ def render_tick_page(ts):
     status = entry.get("Status")
     metrics = entry.get("Metrics") or {}
     triggered = bool(metrics.get("Triggered"))
-    reasons = ", ".join(metrics.get("Reasons") or []) or "—"
+    reasons = market_agent.describe_reasons(metrics.get("Reasons"), metrics.get("PriceMovePercent")) or "—"
 
     last_triggered = _last_triggered_before(full_history, ts)
     if last_triggered:

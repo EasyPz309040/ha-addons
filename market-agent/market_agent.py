@@ -329,6 +329,29 @@ def _on_data(args):
         _on_auth_status_data(result)
 
 
+def describe_reasons(reasons, price_move_percent):
+    """Reasons entries are the Workflow Service's own wire values
+    ("PriceMove", "Volatility") - just the name of whichever threshold
+    tripped, no direction. PriceMovePercent's sign carries that, so this
+    adds "Upward"/"Downward" here (both ui.py and this module's own
+    notify() need the same wording, so it lives in one place) rather
+    than asking the Workflow Service to encode direction into the
+    reason name itself. Every other reason passes through unchanged.
+    Shared by ui.py's table/detail rendering and this module's
+    notifications, so the two can't say something different for the
+    same tick.
+    """
+    if not reasons:
+        return ""
+    described = []
+    for r in reasons:
+        if r == "PriceMove" and price_move_percent is not None:
+            described.append("Upward price move" if price_move_percent > 0 else "Downward price move")
+        else:
+            described.append(r)
+    return ", ".join(described)
+
+
 def _on_preview_data(result):
     # Validated against models.MarketWorkflowResult (mirrored from
     # Model.Core, see that file's own docstring for why it's hand-written
@@ -366,7 +389,8 @@ def _on_preview_data(result):
         # many auth-required ticks happen before someone logs back in.
         if not auth_required:
             if triggered and not state.get("last_triggered"):
-                reasons = ", ".join((metrics.reasons if metrics else None) or [])
+                reasons = describe_reasons(metrics.reasons if metrics else None,
+                                            metrics.price_move_percent if metrics else None)
                 notify("Market Agent",
                        f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
             state["last_triggered"] = triggered
