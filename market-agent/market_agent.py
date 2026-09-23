@@ -329,24 +329,29 @@ def _on_data(args):
         _on_auth_status_data(result)
 
 
-def describe_reasons(reasons, price_move_percent):
+def describe_reasons(reasons, current_price, baseline_price):
     """Reasons entries are the Workflow Service's own wire values
     ("PriceMove", "Volatility") - just the name of whichever threshold
-    tripped, no direction. PriceMovePercent's sign carries that, so this
-    adds "Upward"/"Downward" here (both ui.py and this module's own
-    notify() need the same wording, so it lives in one place) rather
-    than asking the Workflow Service to encode direction into the
-    reason name itself. Every other reason passes through unchanged.
-    Shared by ui.py's table/detail rendering and this module's
-    notifications, so the two can't say something different for the
-    same tick.
+    tripped, no direction. Direction has to come from CurrentPrice vs
+    BaselinePrice, NOT from PriceMovePercent's sign - confirmed with the
+    xWeb session that PriceMovePercent is Math.Abs(...) server-side, an
+    unsigned magnitude. An earlier version of this function used
+    PriceMovePercent > 0 as the direction test, which is a real bug: an
+    unsigned value is never negative, so it always said "Upward" -
+    caught 2026-09-23 when a confirmed-downward tick (verified against
+    the server's own Evaluate() math) still showed "Upward price move"
+    in the UI and a notification. Both ui.py's table/detail rendering
+    and this module's own notify() call through here, so the two can't
+    say something different for the same tick. Every reason other than
+    PriceMove passes through unchanged.
     """
     if not reasons:
         return ""
+    have_direction = current_price is not None and baseline_price is not None
     described = []
     for r in reasons:
-        if r == "PriceMove" and price_move_percent is not None:
-            described.append("Upward price move" if price_move_percent > 0 else "Downward price move")
+        if r == "PriceMove" and have_direction:
+            described.append("Upward price move" if current_price > baseline_price else "Downward price move")
         else:
             described.append(r)
     return ", ".join(described)
@@ -390,7 +395,8 @@ def _on_preview_data(result):
         if not auth_required:
             if triggered and not state.get("last_triggered"):
                 reasons = describe_reasons(metrics.reasons if metrics else None,
-                                            metrics.price_move_percent if metrics else None)
+                                            metrics.current_price if metrics else None,
+                                            metrics.baseline_price if metrics else None)
                 notify("Market Agent",
                        f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
             state["last_triggered"] = triggered
