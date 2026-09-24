@@ -26,8 +26,11 @@ The panel is three cards, top to bottom:
    happens, whether triggered by the button or by the background loop's
    own threshold check, not just after you click it yourself.
 3. **Workflow History** — every check the Workflow Service's loop has
-   produced recently, one row each. Click a row (the little chip on its
-   time) for that check's full **Workflow detail**.
+   produced recently, one row each, with a **Baseline** column immediately
+   left of **Price move** — the actual reference price that check's move
+   percentage was measured against, so you don't have to click into a row
+   just to see what "over threshold" was relative to. Click a row (the
+   little chip on its time) for that check's full **Workflow detail**.
 
 ## How it stays live
 
@@ -169,7 +172,13 @@ side.** Price move and Volatility each show the measured value, the
 configured threshold, whether that check was **over threshold** or
 **under threshold** (straight from the Workflow Service's own `Reasons`,
 not re-derived here), and the **baseline** value that measurement was
-actually taken against. Both are baseline-relative — % change of the
+actually taken against. A price-move reason reads as **"Upward price
+move"** or **"Downward price move"**, not the bare wire value
+(`PriceMove`) the Workflow Service actually sends — the Workflow
+Service's own move percentage has no sign (it's a magnitude, not a
+signed change), so this add-on adds the direction itself by comparing
+that check's current price against its baseline. Every other reason
+(e.g. Volatility) shows as-is, unchanged. Both are baseline-relative — % change of the
 current reading vs. a persisted baseline, not anything computed purely
 from that check's own candle window. The baseline is seeded from the
 first-ever check for a symbol (which never triggers on that same call

@@ -16,6 +16,16 @@ add-on starts computing a trigger condition, formatting a prompt, or
 holding a Claude key locally instead of calling xWeb for it, that
 logic has leaked into a public repo and needs to move back.
 
+`models.py` (added 2026-09-20) does not cross that line, even though it
+mirrors xWeb's own `Model.Core` classes field-for-field — it's schema
+*shape* only (field names, types, nullability), validated via Pydantic
+against every streamHub payload before this add-on trusts a field off
+it. No threshold value, prompt text, or trigger computation lives in it;
+the actual `Triggered` decision is still made entirely by xWeb and just
+read as-is. If a future edit to that file starts deriving a trigger
+condition independently instead of reading one xWeb already computed,
+that's the same "logic has leaked" line as above.
+
 ## THIS REPO IS PUBLIC
 
 No keys, no tokens, no inventory, no host addresses beyond what's already in
@@ -57,9 +67,14 @@ the sidebar UX (one entry per concern) is the reason it doesn't.
 - `cluster-control`: no Galaxy collections. The playbooks use
   `ansible.builtin` only, so the image installs none. Adding one means
   updating the Dockerfile too.
-- `market-agent`: `signalrcore` (pip) is its one dependency, for the
-  persistent SignalR subscription to xWeb's `/streamHub` — the build needs
-  PyPI reachable, not just Alpine's mirrors. Don't add a second dependency
-  without the same justification.
+- `market-agent`: two pip dependencies, both pinned (never `:latest`/
+  unpinned — a floating version once froze an old, buggy `signalrcore`
+  release into the image for weeks with nothing to notice, see
+  `Home/ACTION-PLAN.md`'s Gotchas-adjacent history) — `signalrcore` for
+  the persistent SignalR subscription to xWeb's `/streamHub`, `pydantic`
+  for validating those payloads against `models.py`. The build needs PyPI
+  reachable, not just Alpine's mirrors. Don't add a third dependency
+  without the same justification, and don't let either drift back to
+  unpinned.
 
 See `../Home/CLAUDE.md` for fleet layout and design decisions.
