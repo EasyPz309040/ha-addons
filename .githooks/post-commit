@@ -1,6 +1,6 @@
 #!/bin/sh
-# Regenerates the HomeLab workspace's solution-files export (Home + ha-addons +
-# PiCluster) to Downloads after every commit in this repo. Needs core.hooksPath
-# set to .githooks (git config core.hooksPath .githooks) and the dotnet SDK on
-# PATH; requires D:/GitSource/xCalc/Scripts/Scripts.csproj to exist.
-dotnet run --project D:/GitSource/xCalc/Scripts/Scripts.csproj -- --workspace HomeLab
+# Optional local developer hook. Configure LOCAL_EXPORT_PROJECT to a local
+# export tool project; no machine-specific path is stored in this repository.
+if [ -n "${LOCAL_EXPORT_PROJECT:-}" ]; then
+	dotnet run --project "$LOCAL_EXPORT_PROJECT" -- --workspace local
+fi
