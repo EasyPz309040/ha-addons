@@ -678,6 +678,7 @@ tr.new-baseline {{ background: rgba(3,155,229,.07); }}
 {rows}
 </table>
 </div>
+<p class="pager">{pager}</p>
 </div>
 <script>
 {chart_js_fn}
@@ -773,7 +774,7 @@ def _render_ai_result_block(entry):
         meta_bits.append(f"{_fmt_num(input_tokens)} in / {_fmt_num(output_tokens)} out tokens")
     if cost:
         meta_bits.append(cost)
-    meta_bits.append(f"<a href='./tick?ts={entry.get('receivedAt', 0)}'>full workflow detail</a>")
+    meta_bits.append(f"<a href='./tick?id={entry.get('RowId', 0)}'>full workflow detail</a>")
 
     return (
         f"<p class='note'>{' · '.join(meta_bits)}</p>"
@@ -782,7 +783,48 @@ def _render_ai_result_block(entry):
     )
 
 
-def render_page(notice=None, good=True):
+def _history_rows(entries):
+    """Workflow History table rows, newest first."""
+    rows = []
+    for e in reversed(entries):
+        status = e.get("Status")
+        metrics = e.get("Metrics") or {}
+        triggered = bool(metrics.get("Triggered"))
+        reasons = market_agent.describe_reasons(
+            metrics.get("Reasons"), metrics.get("CurrentPrice"), metrics.get("BaselinePrice"))
+        received_at = e.get("receivedAt", 0)
+        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(received_at))
+        # NewBaselinePrice/NewBaselineVolatility are non-null only on the
+        # Preview tick that just (re)established the baseline - flagging
+        # it here is what lets you tell, at a glance, which check the
+        # other rows' baseline-relative numbers are actually measured
+        # against.
+        new_baseline = (metrics.get("NewBaselinePrice") is not None
+                         or metrics.get("NewBaselineVolatility") is not None)
+        rows.append(
+            "<tr class='{rcls}'><td><a class='row-link' href='./tick?id={row_id}'>{ts}</a></td>"
+            "<td class='{cls}'>{status}</td>"
+            "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
+            "<td class='num'>{baseline}</td><td class='num'>{move}</td>"
+            "<td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
+                rcls="new-baseline" if new_baseline else "",
+                row_id=e.get("RowId", 0),
+                ts=ts,
+                cls="baseline-status" if new_baseline else ("bad" if status == "SaxoAuthRequired" else "ok"),
+                status=html.escape("Baseline" if new_baseline else str(status or "?")),
+                tcls="triggered" if triggered else "",
+                trig="true" if triggered else "false",
+                reasons=html.escape(reasons),
+                baseline=_fmt_price(metrics.get("BaselinePrice")),
+                move=_fmt_pct(metrics.get("PriceMovePercent")),
+                vol=_fmt_pct(metrics.get("VolatilityMovePercent")),
+                volume=_fmt_num(metrics.get("AvgVolume"))))
+    if not rows:
+        rows.append("<tr><td colspan='8'>No checks yet.</td></tr>")
+    return rows
+
+
+def render_page(notice=None, good=True, before=None):
     # PascalCase throughout below (Status, Metrics, Triggered, Reasons,
     # EvalCandles, CloseBid/CloseAsk) - matches the C# property names on
     # MarketWorkflowResult/TriggerMetrics exactly, since JsonConvert has no
@@ -804,46 +846,29 @@ def render_page(notice=None, good=True):
     last_update_text = "Last update: " + _relative_time(entries[-1].get("receivedAt") if entries else None)
     next_check_text = _next_check_text(entries)
 
-    rows = []
-    for e in reversed(entries):
-        status = e.get("Status")
-        metrics = e.get("Metrics") or {}
-        triggered = bool(metrics.get("Triggered"))
-        reasons = market_agent.describe_reasons(
-            metrics.get("Reasons"), metrics.get("CurrentPrice"), metrics.get("BaselinePrice"))
-        received_at = e.get("receivedAt", 0)
-        ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(received_at))
-        # NewBaselinePrice/NewBaselineVolatility are non-null only on the
-        # Preview tick that just (re)established the baseline - flagging
-        # it here is what lets you tell, at a glance, which check the
-        # other rows' baseline-relative numbers are actually measured
-        # against.
-        new_baseline = (metrics.get("NewBaselinePrice") is not None
-                         or metrics.get("NewBaselineVolatility") is not None)
-        rows.append(
-            "<tr class='{rcls}'><td><a class='row-link' href='./tick?ts={raw_ts}'>{ts}</a></td>"
-            "<td class='{cls}'>{status}</td>"
-            "<td class='{tcls}'>{trig}</td><td>{reasons}</td>"
-            "<td class='num'>{baseline}</td><td class='num'>{move}</td>"
-            "<td class='num'>{vol}</td><td class='num'>{volume}</td></tr>".format(
-                rcls="new-baseline" if new_baseline else "",
-                raw_ts=received_at,
-                ts=ts,
-                cls="baseline-status" if new_baseline else ("bad" if status == "SaxoAuthRequired" else "ok"),
-                status=html.escape("Baseline" if new_baseline else str(status or "?")),
-                tcls="triggered" if triggered else "",
-                trig="true" if triggered else "false",
-                reasons=html.escape(reasons),
-                baseline=_fmt_price(metrics.get("BaselinePrice")),
-                move=_fmt_pct(metrics.get("PriceMovePercent")),
-                vol=_fmt_pct(metrics.get("VolatilityMovePercent")),
-                volume=_fmt_num(metrics.get("AvgVolume"))))
-    if not rows:
-        rows.append("<tr><td colspan='8'>No checks yet.</td></tr>")
+    shown = entries[-30:]
+    if before is not None:
+        page = market_agent.page_before(before)
+        shown = page["entries"] if page else []
+        older_from = (shown[0].get("RowId")
+                      if shown and page["count"] >= market_agent.PAGE_SIZE else None)
+        newer_html = "<a href='./'>&larr; Newest checks</a>"
+        if page is None:
+            newer_html += " &middot; <span class='note'>Older checks are unavailable right now.</span>"
+    else:
+        older_from = shown[0].get("RowId") if shown else None
+        newer_html = ""
+    older_html = f"<a href='./?before={older_from}'>Older checks &rarr;</a>" if older_from is not None else ""
+    pager = " &middot; ".join(x for x in (newer_html, older_html) if x)
+    rows = _history_rows(shown)
 
     latest_entry = entries[-1] if entries else {}
-    candles, candles_json = _candles_payload(latest_entry)
-    chart_caption = _chart_caption(latest_entry, market_agent.SYMBOL)
+    # History is summary rows only; the chart needs the newest check's
+    # candles, fetched once by id (cached) and falling back to no chart.
+    chart_entry = (market_agent.full_entry(latest_entry["RowId"])
+                   if latest_entry.get("RowId") else None) or latest_entry
+    candles, candles_json = _candles_payload(chart_entry)
+    chart_caption = _chart_caption(chart_entry, market_agent.SYMBOL)
 
     if entries:
         last_check_when = time.strftime("%H:%M", time.localtime(latest_entry.get("receivedAt", 0)))
@@ -867,7 +892,7 @@ def render_page(notice=None, good=True):
         last_check_block=last_check_block,
         ai_result_block=ai_result_block,
         chart_js_fn=CHART_JS_FN, font_face=FONT_FACE,
-        rows="".join(rows), candles_json=candles_json)
+        rows="".join(rows), pager=pager, candles_json=candles_json)
 
 
 def _last_triggered_before(history, ts):
@@ -883,19 +908,19 @@ def _last_triggered_before(history, ts):
     return max(prior, key=lambda e: e.get("receivedAt", 0)) if prior else None
 
 
-def render_tick_page(ts):
-    """Full detail for one historical tick - every stored result already
-    carries its own EvalCandles/Metrics in full, this just surfaces
-    what was already being persisted rather than collecting anything new.
+def render_tick_page(row_id):
+    """Full detail for one stored check, fetched by id from the Workflow
+    Service (the in-memory history only holds summary rows). The check may
+    be older than anything in memory, so the history used for sparklines
+    and "last trigger" is simply whatever is in memory up to that check.
     """
     full_history = market_agent.history(limit=200)
-    entry = next((e for e in full_history if e.get("receivedAt") == ts), None)
+    entry = market_agent.full_entry(row_id) if row_id else None
+    ts = entry.get("receivedAt", 0) if entry else 0
     if entry is None:
         return TICK_PAGE.format(
             ts="not found", chart_block="", trigger_detail="", font_face=FONT_FACE,
-            metric_rows="<tr><td colspan='2'>That check has aged out of history "
-                        "(bounded to the most recent 50 checks, plus 20 login-required "
-                        "ones) or the link is stale.</td></tr>",
+            metric_rows="<tr><td colspan='2'>That check is no longer stored (the Workflow Service keeps a bounded number of checks) or the link is stale.</td></tr>",
             signal_block="")
 
     status = entry.get("Status")
@@ -907,7 +932,7 @@ def render_tick_page(ts):
     last_triggered = _last_triggered_before(full_history, ts)
     if last_triggered:
         lt_ts = time.strftime("%Y-%m-%d %H:%M", time.localtime(last_triggered.get("receivedAt", 0)))
-        last_triggered_html = f"<a href='./tick?ts={last_triggered.get('receivedAt', 0)}'>{html.escape(lt_ts)}</a>"
+        last_triggered_html = f"<a href='./tick?id={last_triggered.get('RowId', 0)}'>{html.escape(lt_ts)}</a>"
     else:
         last_triggered_html = "—"
 
@@ -1012,13 +1037,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(data, ctype="font/woff",
                                headers={"Cache-Control": "public, max-age=31536000, immutable"})
         if self._path().endswith("/tick"):
-            raw_ts = self._query("ts")
             try:
-                ts = float(raw_ts)
+                row_id = int(self._query("id"))
             except (TypeError, ValueError):
-                ts = None
-            return self._send(render_tick_page(ts))
-        return self._send(render_page())
+                row_id = None
+            return self._send(render_tick_page(row_id))
+        try:
+            before = int(self._query("before"))
+        except (TypeError, ValueError):
+            before = None
+        return self._send(render_page(before=before))
 
     def do_POST(self):
         ok, msg = market_agent.trigger_real_run()

@@ -34,4 +34,4 @@ Notifications are not sent between `silence_start` and `silence_end` (default 22
 | `volatility_threshold_percent` | Optional backend configuration override; blank leaves backend settings unchanged. |
 | `system_prompt` | Optional backend prompt override; blank leaves backend settings unchanged. |
 
-History is loaded from the backend's stored results, so the backend must have its database configured; the add-on keeps only a bounded in-memory view and notification state under `/share/market-agent/`.
+History is loaded from the backend's stored results as slim summary rows (newest page first, with an "Older checks" link that pages back), so the backend must have its database configured. The chart and a check's detail page fetch that one full result on demand. The add-on keeps only a bounded in-memory view and notification state under `/share/market-agent/`.

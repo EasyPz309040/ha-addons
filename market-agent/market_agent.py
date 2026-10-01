@@ -109,6 +109,7 @@ SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
 CONFIG_URL = f"https://{XWEB_HOST}/config/Maintain"
 ANALYZE_URL = f"https://{XWEB_HOST}/claude/MarketAgentAnalyze"
 RESULTS_URL = f"https://{XWEB_HOST}/market-agent/GetResults"
+RESULT_URL = f"https://{XWEB_HOST}/market-agent/GetResult"
 
 TOPIC = "marketagent.result"
 # The Workflow Service's own auth-status topic - the literal name below
@@ -176,18 +177,16 @@ def auth_status():
 SHARE = Path("/share/market-agent")
 STATEFILE = SHARE / ".notify-state.json"
 # The in-memory view of the Workflow Service's stored results is a panel
-# convenience, not an audit trail - the database is the record. The
-# auth-required status (wire value "SaxoAuthRequired") is capped
-# separately and smaller: an expired session produces one near-identical
-# entry per poll until someone logs back in, and none of the extras beyond
-# a handful are useful - without a separate cap they'd crowd out real
-# history out of the MAX_ENTRIES budget during exactly the outage you'd
-# want history for. Completed (billed) analyses are capped separately too,
-# so a run of previews never pushes the last real analysis out of view.
+# convenience, not an audit trail - the database is the record. It holds
+# summary rows only (GetResults never returns userContent/systemPrompt/
+# evalCandles; GetResult?id= does, on demand - see full_entry). About 4h of
+# 5-minute previews, with Completed (billed) analyses capped separately so a
+# run of previews never pushes the last real analysis out of view. Older
+# checks are paged in from the database for display (page_before), not kept.
 MAX_ENTRIES = 50
-MAX_AUTH_REQUIRED_ENTRIES = 20
 MAX_COMPLETED_ENTRIES = 30
-_LOW_VALUE_STATUSES = {"SaxoAuthRequired"}
+MAX_CLOSED_ENTRIES = 10
+PAGE_SIZE = 30  # rows per "older" page in the panel
 
 # Guards _entries/_cursor and serializes the notification edge-detection
 # that follows each row, so a live row and a REST catch-up can't interleave.
@@ -290,8 +289,8 @@ def _entry_from_row(row, result):
     """Panel entry for any row carrying a result (Preview, Completed,
     MarketClosed, or a kind added later - Kind stays a plain string here so
     an unknown one is tolerated, not rejected). receivedAt is the row's own
-    RunAt, so an entry keeps the same identity (and ui.py's tick?ts= link
-    keeps working) across add-on restarts."""
+    RunAt, and RowId its database id (the key for GetResult and paging), so
+    an entry keeps the same identity across add-on restarts."""
     entry = _pascal(result)
     entry["RowId"] = row.id
     entry["receivedAt"] = row.run_at.timestamp()
@@ -299,11 +298,10 @@ def _entry_from_row(row, result):
 
 
 def _trim(entries):
-    low_value = [e for e in entries if e.get("Status") in _LOW_VALUE_STATUSES]
     completed = [e for e in entries if e.get("Status") == "Completed"]
-    normal = [e for e in entries
-              if e.get("Status") not in _LOW_VALUE_STATUSES and e.get("Status") != "Completed"]
-    kept = (low_value[-MAX_AUTH_REQUIRED_ENTRIES:] + completed[-MAX_COMPLETED_ENTRIES:]
+    closed = [e for e in entries if e.get("Status") == "MarketClosed"]
+    normal = [e for e in entries if e.get("Status") not in ("Completed", "MarketClosed")]
+    kept = (completed[-MAX_COMPLETED_ENTRIES:] + closed[-MAX_CLOSED_ENTRIES:]
             + normal[-MAX_ENTRIES:])
     kept.sort(key=lambda e: e.get("receivedAt", 0))
     return kept
@@ -478,6 +476,57 @@ def _fetch_rows(**params):
         return json.loads(resp.read().decode())
 
 
+_full_cache = {}  # row id -> full entry; tiny, the panel only ever asks for the newest few
+_FULL_CACHE_MAX = 4
+
+
+def full_entry(row_id):
+    """The full panel entry (with EvalCandles, UserContent, SystemPrompt)
+    for one row, from GET GetResult?id=, or None if it was trimmed away
+    (404) or the call failed. Cached per id, so re-rendering the page
+    between checks costs nothing."""
+    with _ingest_lock:
+        cached = _full_cache.get(row_id)
+    if cached is not None:
+        return cached
+    try:
+        with urllib.request.urlopen(f"{RESULT_URL}?id={int(row_id)}", timeout=15) as resp:
+            raw = json.loads(resp.read().decode())
+        row = MarketAgentResultRow.model_validate(raw)
+    except (urllib.error.URLError, ValueError, ValidationError) as e:
+        log.warning("full result %s unavailable: %s", row_id, e)
+        return None
+    if row.result is None:
+        return None
+    entry = _entry_from_row(row, raw["result"])
+    with _ingest_lock:
+        while len(_full_cache) >= _FULL_CACHE_MAX:
+            _full_cache.pop(next(iter(_full_cache)))
+        _full_cache[row_id] = entry
+    return entry
+
+
+def page_before(row_id, limit=PAGE_SIZE):
+    """One page of older summary entries (oldest first), straight from
+    GetResults?beforeId=. Display-only: not merged into the in-memory view.
+    Returns None if the call fails; a page shorter than `limit` means there
+    is nothing older still."""
+    try:
+        rows = _fetch_rows(beforeId=int(row_id), limit=limit)
+    except (urllib.error.URLError, ValueError) as e:
+        log.warning("older results page unavailable: %s", e)
+        return None
+    entries = []
+    for raw in rows:
+        try:
+            row = MarketAgentResultRow.model_validate(raw)
+        except ValidationError:
+            continue
+        if row.result is not None:  # Baseline rows have no panel entry
+            entries.append(_entry_from_row(row, raw["result"]))
+    return {"entries": entries, "count": len(rows)}
+
+
 def _sync_history():
     """Brings the panel's entries up to date from GetResults.
 
@@ -500,9 +549,9 @@ def _sync_history():
                 for raw in _fetch_rows(afterId=_cursor, limit=600):
                     _on_result_row(raw)
                 return len(_seen_ids) - before
-            rows = (_fetch_rows(kind="Preview", limit=MAX_ENTRIES + MAX_AUTH_REQUIRED_ENTRIES)
+            rows = (_fetch_rows(kind="Preview", limit=MAX_ENTRIES)
                     + _fetch_rows(kind="Completed", limit=MAX_COMPLETED_ENTRIES)
-                    + _fetch_rows(kind="MarketClosed", limit=10))
+                    + _fetch_rows(kind="MarketClosed", limit=MAX_CLOSED_ENTRIES))
         except Exception as e:
             log.warning("market agent history sync failed: %s", e)
             return 0

@@ -356,7 +356,7 @@
     <div class="diagram-scroll">
       <figure>
         <svg viewBox="0 0 1300 520" role="img"
-             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.result, one message per result row xWeb stores in its database, and saxo.authstatus, pushed the instant a login or token refresh happens. On the same connect event it loads history from xWeb's GetResults endpoint and catches up on missed rows by id, and it pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint (POST /config/Maintain). A separate watchdog thread polls GetResults and force-closes the connection if rows turn up that the hub never delivered, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
+             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.result, one message per result row xWeb stores in its database, and saxo.authstatus, pushed the instant a login or token refresh happens. On the same connect event it loads the newest page of slim summary rows from xWeb's GetResults endpoint, catches up on missed rows by id, and fetches a full row by id only for the chart and the detail page, and it pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint (POST /config/Maintain). A separate watchdog thread polls GetResults and force-closes the connection if rows turn up that the hub never delivered, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
           <defs>
             <marker id="f2-wire" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" style="fill:var(--wire)"></path>
@@ -390,7 +390,7 @@
 
           <rect x="500" y="100" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
           <text x="665" y="122" text-anchor="middle" class="node-label" style="font-size:12.5px">SignalR subscriber</text>
-          <text x="665" y="140" text-anchor="middle" class="node-sub">Subscribe, both topics, + GetResults catch-up by id</text>
+          <text x="665" y="140" text-anchor="middle" class="node-sub">Subscribe, both topics, + GetResults summary pages</text>
           <text x="665" y="156" text-anchor="middle" class="node-sub">on every connect AND every reconnect</text>
           <text x="665" y="172" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">group membership doesn't survive a reconnect</text>
 
