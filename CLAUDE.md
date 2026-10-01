@@ -26,6 +26,7 @@ ha-addons/
 ## Guardrails
 
 - **Keep `market-agent` free of proprietary decision logic.** It displays and forwards data from xWeb; trigger thresholds, prompts, Claude calls, and API credentials belong in xWeb. Pydantic models may validate payload shape and types, but must not independently calculate decisions.
+- **Consume the unified data contract; recommend by it.** `market-agent` is one consumer of a single data contract shared by every client (REST, SignalR, the Excel add-in, webApp, and any future solution); see the xWeb guidance in the local multi-repository workspace. Generate or share types from that contract rather than hand-declaring or re-shaping them per add-on. When a need can be met by a local adapter or by fixing the contract at its source in the backend, recommend the source fix, state the trade-off and the other consumers affected, and log any interim workaround as debt.
 - **Keep `cluster-control` as a shell around private playbooks.** Inventory and host-specific operational data remain in Home and are fetched at runtime using the read-only deploy key stored on the HA host, never in this repository or add-on configuration.
 - Keep the add-ons separate: each has its own directory, `slug`, configuration, and release version.
 - Bump an add-on's `version` in its `config.yaml` when releasing changes; keep its `slug` stable because Home Assistant uses it as the add-on identity.
@@ -42,6 +43,6 @@ ha-addons/
 ## Key Learnings / Gotchas
 
 - `cluster-control` synchronizes playbooks before runs; the private-repository credentials belong on the HA host, not in this public image or its Supervisor options.
-- `market-agent` validates xWeb hub payloads because SignalR payloads are not described by OpenAPI. Keep those shape models aligned with xWeb's server definitions while leaving all decisions in xWeb.
+- `market-agent` validates xWeb hub payloads because SignalR payloads are not described by OpenAPI. Keep those shape models aligned with xWeb's server definitions while leaving all decisions in xWeb, and prefer asking xWeb to unify a topic with its REST shape over growing casing-tolerant parsing here.
 - Do not leave pip dependencies unpinned. A floating package version can silently change or freeze behavior independently of this repository's release.
 - Preserve LF line endings; CRLF shell scripts fail when run in Linux containers.
