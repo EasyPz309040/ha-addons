@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.25.4"
+version: "1.26.0"
 slug: "market-agent"
 description: "A live dashboard client for an operator-configured analysis service."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
@@ -20,6 +20,8 @@ options:
   workflow_service_host: ""
   market_agent_symbol: ""
   notify_service: ""
+  silence_start: "22:30"
+  silence_end: "07:00"
   auth_login_url: ""
   price_move_threshold_percent: ""
   volatility_threshold_percent: ""
@@ -28,6 +30,8 @@ schema:
   workflow_service_host: str
   market_agent_symbol: str
   notify_service: str
+  silence_start: match(^([01][0-9]|2[0-3]):[0-5][0-9]$)?
+  silence_end: match(^([01][0-9]|2[0-3]):[0-5][0-9]$)?
   auth_login_url: str
   price_move_threshold_percent: str
   volatility_threshold_percent: str

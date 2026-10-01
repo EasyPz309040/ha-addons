@@ -51,8 +51,7 @@ CONNECTION_PILLS = {
 
 def _auth_pill(entries):
     """Prefers the saxo.authstatus push - pushed the instant a login or
-    refresh actually happens, not tied to marketagent.preview's 5-minute
-    poll cadence at all. Falls back to inferring it from the latest
+    refresh actually happens, not tied to the 5-minute result cadence at all. Falls back to inferring it from the latest
     preview tick's own Status (the old, laggier signal) only if no
     saxo.authstatus has arrived yet - an older Workflow Service without
     this topic, or just not received one this run - same
@@ -885,8 +884,8 @@ def _last_triggered_before(history, ts):
 
 
 def render_tick_page(ts):
-    """Full detail for one historical tick - every entry in history/log.jsonl
-    already carries its own EvalCandles/Metrics in full, this just surfaces
+    """Full detail for one historical tick - every stored result already
+    carries its own EvalCandles/Metrics in full, this just surfaces
     what was already being persisted rather than collecting anything new.
     """
     full_history = market_agent.history(limit=200)

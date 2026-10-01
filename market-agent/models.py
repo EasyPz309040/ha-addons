@@ -1,7 +1,7 @@
 """The authoritative shape of data crossing the streamHub boundary from
 xWeb's Model.Core. Cross-checked against xWeb's own OpenAPI doc
 (generated from a dev run of Services.API after xWeb retyped
-GET/POST /claude/MarketAgent from bare IResult to
+the market agent routes from bare IResult to
 Results<Ok<MarketWorkflowResult>, ProblemHttpResult> and added
 GET /saxo/AuthStatus - both were IResult-typed or missing entirely
 before, which is why every field here used to be hand-transcribed from
@@ -126,11 +126,11 @@ class TriggerMetrics(_HubModel):
 
 
 class MarketWorkflowResult(_HubModel):
-    """marketagent.preview's payload, and GET/POST /claude/MarketAgent's
-    REST response - the same C# class, two channels. Field presence
-    varies by status (see each field's comment) - mirrors Model.Core's
-    own reference types being un-null-annotated, a runtime contract on
-    xWeb's side too, not just here.
+    """The Result of a stored row (MarketAgentResultRow), and the response
+    of POST /market-agent/RunPreview and POST /claude/MarketAgentAnalyze.
+    Field presence varies by status (see each field's comment) - mirrors
+    Model.Core's own reference types being un-null-annotated, a runtime
+    contract on xWeb's side too, not just here.
     """
     status: str = _dual("Status", "status")  # SaxoAuthRequired|MarketClosed|TriggerNotMet|Preview|Completed
     run_at: DotNetDateTime = _dual("RunAt", "runAt")
@@ -145,6 +145,27 @@ class MarketWorkflowResult(_HubModel):
     input_tokens: int | None = _dual("InputTokens", "inputTokens", default=None)  # Completed-only
     output_tokens: int | None = _dual("OutputTokens", "outputTokens", default=None)  # Completed-only
     model: str | None = _dual("Model", "model", default=None)  # Completed-only
+
+
+class MarketAgentBaseline(_HubModel):
+    """A Baseline row's payload - the trigger baseline xWeb persists."""
+    price: Decimal = _dual("Price", "price")
+    volatility: Decimal = _dual("Volatility", "volatility")
+
+
+class MarketAgentResultRow(_HubModel):
+    """One stored row: GET /market-agent/GetResults's element type and the
+    marketagent.result topic's payload, in the same camelCase System.Text.Json
+    shape. result is set for Preview/Completed rows, baseline for Baseline
+    rows. id is the cursor for ?afterId= catch-up and the de-duplication key
+    between a live append and rows already fetched over REST.
+    """
+    id: int = _dual("Id", "id")
+    kind: str = _dual("Kind", "kind")  # Preview|Baseline|Completed|MarketClosed, open-ended
+    symbol: str = _dual("Symbol", "symbol")
+    run_at: DotNetDateTime = _dual("RunAt", "runAt")
+    result: MarketWorkflowResult | None = _dual("Result", "result", default=None)
+    baseline: MarketAgentBaseline | None = _dual("Baseline", "baseline", default=None)
 
 
 class SaxoAuthStatus(_HubModel):

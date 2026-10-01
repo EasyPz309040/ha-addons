@@ -18,6 +18,8 @@ SignalR reconnects automatically and requests the latest state after reconnectin
 
 Set `notify_service` to a notification service configured in your Home Assistant instance. The add-on uses Home Assistant's Supervisor API proxy; it does not need a long-lived Home Assistant token. Notifications are best-effort and do not stop data updates if delivery fails.
 
+Notifications are not sent between `silence_start` and `silence_end` (default 22:30 to 07:00, Home Assistant's timezone). Notifications raised in that window are dropped, not delivered later; the panel still shows the events. Clear either option to disable silencing.
+
 ## Options
 
 | Option | Purpose |
@@ -25,9 +27,11 @@ Set `notify_service` to a notification service configured in your Home Assistant
 | `workflow_service_host` | Required HTTPS hostname or address for your backend. No default is bundled. |
 | `market_agent_symbol` | Required symbol or data key to display. No default is bundled. |
 | `notify_service` | Optional Home Assistant notification service name. |
+| `silence_start` | Start of the quiet period (`HH:MM`, default `22:30`); no notifications are sent until `silence_end`. |
+| `silence_end` | End of the quiet period (`HH:MM`, default `07:00`). |
 | `auth_login_url` | Optional login URL override for notifications and the status panel. |
 | `price_move_threshold_percent` | Optional backend configuration override; blank leaves backend settings unchanged. |
 | `volatility_threshold_percent` | Optional backend configuration override; blank leaves backend settings unchanged. |
 | `system_prompt` | Optional backend prompt override; blank leaves backend settings unchanged. |
 
-History is a bounded convenience log stored under `/share/market-agent/`; it is not an audit record or a substitute for backend persistence.
+History is loaded from the backend's stored results, so the backend must have its database configured; the add-on keeps only a bounded in-memory view and notification state under `/share/market-agent/`.

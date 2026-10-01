@@ -2,9 +2,13 @@
 """Background subscriber + notifier for the Market Agent panel.
 
 Connects once to the Workflow Service's SignalR hub (/streamHub) and stays
-connected, subscribed to topic "marketagent.preview" - each broadcast is
-one tick of MarketAgentBackgroundService's own loop (preview only, never a
-billed Claude call - see the Workflow Service's own CLAUDE.md). No
+connected, subscribed to topic "marketagent.result" - each broadcast is
+one stored result row (a preview tick of MarketAgentBackgroundService's own
+loop, a trigger baseline, or a billed Claude analysis - see the Workflow
+Service's own CLAUDE.md). History lives in the Workflow Service's database:
+it is loaded over GET /market-agent/GetResults, then live rows are appended
+by id, and after every (re)connect GetResults?afterId= catches up on what
+was missed (the topic has no replay). No
 polling: signalrcore holds one persistent connection open via
 with_automatic_reconnect(max_attempts=None), so a dropped connection (a
 Workflow Service pod restart, network blip) recovers on its own. This
@@ -13,10 +17,10 @@ scratch if the very first `start()` call itself fails (Workflow Service
 unreachable at add-on boot) or if the transport eventually closes for
 good despite that setting.
 
-Persists a bounded JSONL history to /share/market-agent/ - deliberately
-not /share/ansible/, which is namespaced for Ansible-specific state and
-has nothing to do with this feature; it just happens to share ui.py's
-container.
+Only the notification dedupe state is persisted locally, under
+/share/market-agent/ - deliberately not /share/ansible/, which is
+namespaced for Ansible-specific state and has nothing to do with this
+feature; it just happens to share ui.py's container.
 
 Notifications go through the Supervisor's own proxied Home Assistant API
 (config.yaml's homeassistant_api: true + the auto-injected
@@ -31,13 +35,15 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from pydantic import ValidationError
 from signalrcore.hub_connection_builder import HubConnectionBuilder
 
-from models import MarketWorkflowResult, SaxoAuthStatus
+from models import MarketAgentResultRow, SaxoAuthStatus
 
 log = logging.getLogger("market_agent")
 
@@ -60,6 +66,37 @@ SYMBOL = os.environ.get("MARKET_AGENT_SYMBOL", "").strip() or "XAGUSD"
 NOTIFY_SERVICE = os.environ.get("NOTIFY_SERVICE", "").strip()
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 
+
+def _parse_hhmm(value):
+    """Minutes since midnight for "HH:MM", or None if blank/absent/invalid
+    (bashio::config prints the literal "null" for an unset option)."""
+    try:
+        hours, minutes = value.strip().split(":")
+        hours, minutes = int(hours), int(minutes)
+    except ValueError:
+        return None
+    if not (0 <= hours < 24 and 0 <= minutes < 60):
+        return None
+    return hours * 60 + minutes
+
+
+# Quiet hours for mobile-app notifications, in the container's local time
+# (the Supervisor passes Home Assistant's configured timezone as TZ).
+# Either bound blank disables silencing. A window whose start is later
+# than its end (the 22:30-07:00 default) wraps past midnight.
+SILENCE_START = _parse_hhmm(os.environ.get("SILENCE_START", ""))
+SILENCE_END = _parse_hhmm(os.environ.get("SILENCE_END", ""))
+
+
+def in_silence_window(now=None):
+    if SILENCE_START is None or SILENCE_END is None or SILENCE_START == SILENCE_END:
+        return False
+    now = now or datetime.now()
+    minute = now.hour * 60 + now.minute
+    if SILENCE_START < SILENCE_END:
+        return SILENCE_START <= minute < SILENCE_END
+    return minute >= SILENCE_START or minute < SILENCE_END
+
 # Trigger thresholds + the Claude system prompt, pushed to the Workflow
 # Service's own App_Data config rather than passed per-request - it's the
 # autonomous background loop that needs these, and that loop is entirely
@@ -69,9 +106,11 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN", "")
 PRICE_MOVE_THRESHOLD_PERCENT = os.environ.get("PRICE_MOVE_THRESHOLD_PERCENT", "").strip()
 VOLATILITY_THRESHOLD_PERCENT = os.environ.get("VOLATILITY_THRESHOLD_PERCENT", "").strip()
 SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
-CONFIG_URL = f"https://{XWEB_HOST}/claude/MarketAgent/config"
+CONFIG_URL = f"https://{XWEB_HOST}/config/Maintain"
+ANALYZE_URL = f"https://{XWEB_HOST}/claude/MarketAgentAnalyze"
+RESULTS_URL = f"https://{XWEB_HOST}/market-agent/GetResults"
 
-TOPIC = "marketagent.preview"
+TOPIC = "marketagent.result"
 # The Workflow Service's own auth-status topic - the literal name below
 # ("saxo.authstatus") is a wire constant coming straight from its own
 # topic-prefix-as-owner convention and must match exactly what it
@@ -79,7 +118,7 @@ TOPIC = "marketagent.preview"
 # downstream of it) needs to echo that, so it doesn't. Pushed the moment
 # the Workflow Service's own upstream-broker auth state actually changes
 # (login, a real refresh, or once at its own startup) - not tied to
-# marketagent.preview's 5-minute poll cadence at all, which is what makes
+# marketagent.result's 5-minute poll cadence at all, which is what makes
 # the auth pill react immediately to a login instead of waiting for the
 # next preview tick.
 AUTH_TOPIC = "saxo.authstatus"
@@ -126,7 +165,7 @@ def auth_status():
     """The latest saxo.authstatus push, or None if none has arrived yet
     (an older Workflow Service without this topic, or just not received
     one this run). ui.py prefers this for the auth pill when present,
-    falling back to inferring it from the last marketagent.preview tick's
+    falling back to inferring it from the last result row's
     Status otherwise - same defensive fields-may-be-absent pattern as
     PublicLoginUrl and the trigger threshold fields.
     """
@@ -135,20 +174,26 @@ def auth_status():
 
 
 SHARE = Path("/share/market-agent")
-LOGFILE = SHARE / "log.jsonl"
 STATEFILE = SHARE / ".notify-state.json"
-# This log is a panel convenience, not an audit trail - no need to keep
-# hundreds of routine ticks. The auth-required status (wire value
-# "SaxoAuthRequired") is capped separately and smaller: an expired
-# session produces one near-identical entry per poll until someone logs
-# back in, and none of the extras beyond a handful are useful - without a
-# separate cap they'd crowd out real history out of the single
-# MAX_ENTRIES budget during exactly the outage you'd want history for.
-# Self-healing: an existing oversized log.jsonl (from before this policy)
-# gets pruned down on the very next append, no migration needed.
+# The in-memory view of the Workflow Service's stored results is a panel
+# convenience, not an audit trail - the database is the record. The
+# auth-required status (wire value "SaxoAuthRequired") is capped
+# separately and smaller: an expired session produces one near-identical
+# entry per poll until someone logs back in, and none of the extras beyond
+# a handful are useful - without a separate cap they'd crowd out real
+# history out of the MAX_ENTRIES budget during exactly the outage you'd
+# want history for. Completed (billed) analyses are capped separately too,
+# so a run of previews never pushes the last real analysis out of view.
 MAX_ENTRIES = 50
 MAX_AUTH_REQUIRED_ENTRIES = 20
+MAX_COMPLETED_ENTRIES = 30
 _LOW_VALUE_STATUSES = {"SaxoAuthRequired"}
+
+# Guards _entries/_cursor and serializes the notification edge-detection
+# that follows each row, so a live row and a REST catch-up can't interleave.
+_ingest_lock = threading.RLock()
+_entries = []  # panel-shaped entries, oldest first (see _entry_from_row)
+_cursor = None  # highest row id ingested so far; GetResults?afterId= resumes from it
 
 _state_lock = threading.Lock()
 
@@ -175,24 +220,10 @@ def connection_status():
         return _connection_state
 
 
-# Watchdog state - see _watchdog_loop below. Separate lock from
-# _connection_lock/_state_lock: this is written from _on_data (the hub's
-# receive thread) and read from the watchdog thread, an unrelated pair to
-# either of those.
-_last_data_at = None
-_last_data_at_lock = threading.Lock()
-
+# Watchdog state - see _watchdog_loop below.
 _current_hub = None
+_current_closed = None  # the Event _connect_once blocks on for _current_hub
 _current_hub_lock = threading.Lock()
-
-# Generous multiple of the default 5-minute poll interval - long enough
-# that a couple of slow/retried polls never false-trigger a reconnect,
-# short enough to self-heal well within a session. Deliberately not
-# market-hours-aware (no special-casing MarketClosed's own multi-hour
-# gaps): a spurious reconnect during a real closed-market silence is
-# cheap and harmless - it just re-requests the same cached tick - so the
-# extra complexity of parsing NextRetryAfter here isn't worth it.
-STALE_AFTER_SECONDS = 25 * 60
 
 
 def _read_state():
@@ -210,7 +241,8 @@ def _write_state(state):
 def notify(title, message, url=None):
     """Best-effort push via the Supervisor's Home Assistant API proxy.
 
-    Silently does nothing if notify_service isn't configured yet, or if
+    Silently does nothing if notify_service isn't configured yet, inside
+    the silence_start-silence_end window (dropped, not queued), or if
     the push itself fails - a notification failure must never take down
     the subscriber thread or hide a real market/auth event from the log.
 
@@ -224,6 +256,9 @@ def notify(title, message, url=None):
     """
     if not NOTIFY_SERVICE or not SUPERVISOR_TOKEN:
         log.info("notify skipped (not configured): %s: %s", title, message)
+        return
+    if in_silence_window():
+        log.info("notify skipped (silence window): %s: %s", title, message)
         return
     api_url = f"http://supervisor/core/api/services/notify/{NOTIFY_SERVICE}"
     body = {"title": title, "message": message}
@@ -240,31 +275,43 @@ def notify(title, message, url=None):
         log.warning("notify failed: %s", e)
 
 
-def _append(entry):
-    SHARE.mkdir(parents=True, exist_ok=True)
-    entries = history(limit=10_000)  # whatever's on disk so far, pre-trim
-    entries.append(entry)
+def _pascal(value):
+    """Re-key a REST/topic (camelCase) payload to the PascalCase ui.py
+    reads, recursively. One adapter at the boundary instead of casing
+    logic spread through the renderer; values are untouched."""
+    if isinstance(value, dict):
+        return {(k[:1].upper() + k[1:]): _pascal(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_pascal(v) for v in value]
+    return value
+
+
+def _entry_from_row(row, result):
+    """Panel entry for any row carrying a result (Preview, Completed,
+    MarketClosed, or a kind added later - Kind stays a plain string here so
+    an unknown one is tolerated, not rejected). receivedAt is the row's own
+    RunAt, so an entry keeps the same identity (and ui.py's tick?ts= link
+    keeps working) across add-on restarts."""
+    entry = _pascal(result)
+    entry["RowId"] = row.id
+    entry["receivedAt"] = row.run_at.timestamp()
+    return entry
+
+
+def _trim(entries):
     low_value = [e for e in entries if e.get("Status") in _LOW_VALUE_STATUSES]
-    normal = [e for e in entries if e.get("Status") not in _LOW_VALUE_STATUSES]
-    kept = low_value[-MAX_AUTH_REQUIRED_ENTRIES:] + normal[-MAX_ENTRIES:]
+    completed = [e for e in entries if e.get("Status") == "Completed"]
+    normal = [e for e in entries
+              if e.get("Status") not in _LOW_VALUE_STATUSES and e.get("Status") != "Completed"]
+    kept = (low_value[-MAX_AUTH_REQUIRED_ENTRIES:] + completed[-MAX_COMPLETED_ENTRIES:]
+            + normal[-MAX_ENTRIES:])
     kept.sort(key=lambda e: e.get("receivedAt", 0))
-    LOGFILE.write_text("\n".join(json.dumps(e) for e in kept) + "\n", encoding="utf-8")
+    return kept
 
 
 def history(limit=100):
-    if not LOGFILE.exists():
-        return []
-    try:
-        lines = LOGFILE.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines[-limit:]:
-        try:
-            out.append(json.loads(line))
-        except ValueError:
-            continue
-    return out
+    with _ingest_lock:
+        return list(_entries[-limit:])
 
 
 def latest():
@@ -284,10 +331,10 @@ def _handle_auth_signal(required):
     """Login-required/resolved notification, deduped on transition.
 
     Single source of truth for last_auth_required so that the
-    marketagent.preview topic's own auth-required status (wire value
-    "SaxoAuthRequired") and the saxo.authstatus push - which can report
-    the same transition independently, sometimes within moments of each
-    other - can't double-notify. Self-locking: callers must NOT already
+    result rows' own auth-required status (wire value "SaxoAuthRequired")
+    and the saxo.authstatus push - which can report the same transition
+    independently, sometimes within moments of each other - can't
+    double-notify. Self-locking: callers must NOT already
     hold _state_lock.
     """
     with _state_lock:
@@ -297,7 +344,7 @@ def _handle_auth_signal(required):
         elif state.get("last_auth_required") and not required:
             notify("Market Agent", "Re-authenticated - Market Agent back online.")
             # SaxoAuthRequired ticks never touch last_triggered (see
-            # _on_preview_data), so it's frozen at whatever it was right
+            # _on_result_row), so it's frozen at whatever it was right
             # before the outage started - if that was already True, the
             # first real tick after reconnecting looks like "no change"
             # to the edge-detector and gets silently suppressed, even
@@ -312,8 +359,8 @@ def _handle_auth_signal(required):
 
 
 def _on_data(args):
-    # signalrcore hands invocation args as a plain list; both topics
-    # broadcast SendAsync("onData", topic, json, ct) - two arguments,
+    # signalrcore hands invocation args as a plain list; every topic
+    # broadcasts SendAsync("onData", topic, json, ct) - two arguments,
     # dispatched here by topic.
     try:
         topic, payload = args[0], args[1]
@@ -324,7 +371,7 @@ def _on_data(args):
     except ValueError:
         return
     if topic == TOPIC:
-        _on_preview_data(result)
+        _on_result_row(result)
     elif topic == AUTH_TOPIC:
         _on_auth_status_data(result)
 
@@ -357,50 +404,115 @@ def describe_reasons(reasons, current_price, baseline_price):
     return ", ".join(described)
 
 
-def _on_preview_data(result):
-    # Validated against models.MarketWorkflowResult (mirrored from
-    # Model.Core, see that file's own docstring for why it's hand-written
-    # rather than generated) before anything downstream trusts a single
-    # field off it - a rename/type change on xWeb's side now fails loudly
-    # here instead of silently producing None everywhere it's read. The
-    # *stored* entry stays the original raw dict, unvalidated fields and
-    # all - ui.py and every existing history file already depend on that
-    # exact shape, and validating doesn't mean narrowing what's kept.
-    entry = dict(result)
-    entry["receivedAt"] = time.time()
-    _append(entry)
+_seen_ids = set()
+_history_loaded = False
 
-    global _last_data_at
-    with _last_data_at_lock:
-        _last_data_at = entry["receivedAt"]
 
+def _on_result_row(raw, notify_events=True):
+    """One marketagent.result message / GetResults row. Idempotent on the
+    row's id, so a live row that also arrives in a REST catch-up is only
+    handled once.
+
+    Validated against models.MarketAgentResultRow (mirrored from the
+    Workflow Service's contract, see models.py's docstring for why it's
+    hand-written rather than generated) before anything downstream trusts a
+    single field off it - a rename/type change on xWeb's side now fails
+    loudly here instead of silently producing None everywhere it's read.
+    The stored entry is the raw result dict re-keyed to PascalCase, so
+    unvalidated fields survive - validating doesn't mean narrowing what's
+    kept.
+
+    notify_events=False is for rows loaded as history: they populate the
+    panel only, and never drive the login/threshold notifications.
+    """
+    global _cursor
     try:
-        parsed = MarketWorkflowResult.model_validate(result)
+        row = MarketAgentResultRow.model_validate(raw)
     except ValidationError as e:
-        log.error("marketagent.preview payload failed schema validation: %s", e)
+        log.error("marketagent.result row failed schema validation: %s", e)
         return
 
-    auth_required = parsed.status == "SaxoAuthRequired"
-    metrics = parsed.metrics
-    triggered = bool(metrics and metrics.triggered)
+    with _ingest_lock:
+        if row.id in _seen_ids:
+            return
+        _seen_ids.add(row.id)
+        _cursor = row.id if _cursor is None else max(_cursor, row.id)
+        # Baseline rows only exist so xWeb survives restarts; the panel reads
+        # the baseline from each result's own Metrics.
+        if row.kind == "Baseline" or row.result is None:
+            return
 
-    _update_public_login_url(parsed.public_login_url)
-    _handle_auth_signal(auth_required)
+        entry = _entry_from_row(row, raw["result"])
+        _entries.append(entry)
+        _entries[:] = _trim(_entries)
 
-    with _state_lock:
-        state = _read_state()
-        # An auth-required tick carries no metrics at all - don't let a
-        # stale "still triggered" state silently persist through however
-        # many auth-required ticks happen before someone logs back in.
-        if not auth_required:
-            if triggered and not state.get("last_triggered"):
-                reasons = describe_reasons(metrics.reasons if metrics else None,
-                                            metrics.current_price if metrics else None,
-                                            metrics.baseline_price if metrics else None)
-                notify("Market Agent",
-                       f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
-            state["last_triggered"] = triggered
-        _write_state(state)
+        if not notify_events:
+            return
+        parsed = row.result
+        auth_required = parsed.status == "SaxoAuthRequired"
+        metrics = parsed.metrics
+        triggered = bool(metrics and metrics.triggered)
+
+        _update_public_login_url(parsed.public_login_url)
+        _handle_auth_signal(auth_required)
+
+        with _state_lock:
+            state = _read_state()
+            # An auth-required tick carries no metrics at all - don't let a
+            # stale "still triggered" state silently persist through however
+            # many auth-required ticks happen before someone logs back in.
+            if not auth_required:
+                if triggered and not state.get("last_triggered"):
+                    reasons = describe_reasons(metrics.reasons if metrics else None,
+                                                metrics.current_price if metrics else None,
+                                                metrics.baseline_price if metrics else None)
+                    notify("Market Agent",
+                           f"{SYMBOL} threshold met" + (f" ({reasons})" if reasons else ""))
+                state["last_triggered"] = triggered
+            _write_state(state)
+
+
+def _fetch_rows(**params):
+    query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+    with urllib.request.urlopen(f"{RESULTS_URL}?{query}", timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _sync_history():
+    """Brings the panel's entries up to date from GetResults.
+
+    First success: loads recent Preview, Completed and MarketClosed rows
+    (the latter carries NextRetryAfter for the panel's reopen line) as history
+    (no notifications) and runs only the newest Preview row through the
+    notification logic, so the login/threshold state matches the live
+    system without replaying old events. Afterwards: everything newer than
+    the cursor, in order, as live rows - this is the post-reconnect
+    catch-up, since marketagent.result has no RequestLatest replay. Held
+    under _ingest_lock so a live row can't be ingested between the fetch
+    and the loop. Best-effort: a failure leaves _history_loaded False and
+    the watchdog loop retries. Returns how many rows it newly ingested.
+    """
+    global _history_loaded
+    with _ingest_lock:
+        before = len(_seen_ids)
+        try:
+            if _history_loaded:
+                for raw in _fetch_rows(afterId=_cursor, limit=600):
+                    _on_result_row(raw)
+                return len(_seen_ids) - before
+            rows = (_fetch_rows(kind="Preview", limit=MAX_ENTRIES + MAX_AUTH_REQUIRED_ENTRIES)
+                    + _fetch_rows(kind="Completed", limit=MAX_COMPLETED_ENTRIES)
+                    + _fetch_rows(kind="MarketClosed", limit=10))
+        except Exception as e:
+            log.warning("market agent history sync failed: %s", e)
+            return 0
+        rows.sort(key=lambda r: r.get("id", 0))
+        fresh = _cursor is None
+        last_preview = max((r["id"] for r in rows if r.get("kind") == "Preview"), default=None)
+        for raw in rows:
+            _on_result_row(raw, notify_events=fresh and raw.get("id") == last_preview)
+        _history_loaded = True
+        return len(_seen_ids) - before
 
 
 def _on_auth_status_data(result):
@@ -452,8 +564,10 @@ def trigger_real_run():
     a manual click getting a 401 is the clearest, most immediate signal
     that the token is actually missing right now.
     """
-    url = f"https://{XWEB_HOST}/claude/MarketAgent?symbols={SYMBOL}&preview=false"
-    req = urllib.request.Request(url, method="GET")
+    # No question: xWeb falls back to its configured MarketAgent:DefaultQuestion.
+    req = urllib.request.Request(
+        ANALYZE_URL, data=json.dumps({"symbols": [SYMBOL]}).encode(), method="POST",
+        headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             return True, resp.read().decode(errors="replace")
@@ -499,7 +613,7 @@ def _push_agent_config():
     if not body:
         return
 
-    payload = json.dumps(body).encode()
+    payload = json.dumps({"name": "MarketAgent", "marketAgent": body}).encode()
     req = urllib.request.Request(CONFIG_URL, data=payload, method="POST",
                                   headers={"Content-Type": "application/json"})
     try:
@@ -533,25 +647,21 @@ def _connect_once():
     def _on_open():
         _set_connection_state("connected")
         # Subscribe is what actually adds this connection to the
-        # server-side SignalR group MarketAgentBackgroundService
-        # broadcasts to (Groups.AddToGroupAsync in StreamHub.Subscribe) -
-        # without it, Clients.Group(Topic).SendAsync(...) never reaches
-        # this connection at all, no matter how long it stays open. This
-        # was missing here from the start: every tick this add-on has
-        # ever shown came from the one-shot RequestLatest snapshot below,
-        # taken at connect/reconnect time - never a live push - which is
-        # why history gaps didn't track the 5-minute poll interval at all
-        # (found 2026-08-23 while investigating a reported auth-status
-        # lag). Must be sent on every (re)connect, not just the
-        # first, since group membership doesn't survive a reconnect
-        # either.
+        # server-side SignalR group the results are broadcast to
+        # (Groups.AddToGroupAsync in StreamHub.Subscribe) - without it,
+        # Clients.Group(Topic).SendAsync(...) never reaches this
+        # connection at all, no matter how long it stays open. Must be
+        # sent on every (re)connect, not just the first, since group
+        # membership doesn't survive a reconnect either.
         hub.send("Subscribe", [TOPIC])
         hub.send("Subscribe", [AUTH_TOPIC])
-        # RequestLatest still matters even with a real subscription: it's
-        # what makes the panel show a value immediately on connect rather
-        # than waiting on the next push of either topic - marketagent.preview's
-        # 5-minute poll, or saxo.authstatus's next login/refresh event.
-        hub.send("RequestLatest", [TOPIC])
+        # marketagent.result has no RequestLatest replay: subscribe first,
+        # then load/catch up over REST (de-duplicated on row id), so no row
+        # can fall in the gap between the two.
+        _sync_history()
+        # saxo.authstatus does replay: RequestLatest is what makes the auth
+        # pill show a value immediately on connect rather than waiting on
+        # the next login/refresh event.
         hub.send("RequestLatest", [AUTH_TOPIC])
         # Self-healing config push - see _push_agent_config's own docstring
         # for why this belongs on every (re)connect, not just once at
@@ -571,15 +681,17 @@ def _connect_once():
         _set_connection_state("disconnected")
         raise RuntimeError("hub.start() returned False")
 
-    global _current_hub
+    global _current_hub, _current_closed
     with _current_hub_lock:
         _current_hub = hub
+        _current_closed = closed
     try:
         closed.wait()
     finally:
         with _current_hub_lock:
             if _current_hub is hub:
                 _current_hub = None
+                _current_closed = None
 
 
 def _run_forever():
@@ -604,9 +716,14 @@ def _watchdog_loop():
     ever arrived. signalrcore's own keep_alive_interval didn't catch it -
     a ping that's written successfully to a half-dead socket doesn't
     prove the far end is still listening, and evidently nothing here was
-    checking for a pong. Deliberately dumb: it only asks "has real data
-    arrived recently enough", not "why not" - and force-closes the
-    current hub if the answer is no, letting _run_forever's existing
+    checking for a pong.
+
+    Silence can't be the signal any more: results are only stored while
+    the market is open and Saxo is authenticated, so a quiet topic is
+    normal for hours. Instead every pass polls GetResults?afterId= - cheap,
+    and also the retry for a failed connect-time load. A row that shows up
+    over REST but never arrived on the hub proves the hub connection is
+    deaf, so it is force-closed, letting _run_forever's existing
     backoff/reconnect loop rebuild it exactly as if it had failed on its
     own. hub.stop() is a documented-safe cross-thread call (it just closes
     the underlying websocket-client socket, same effect a real network
@@ -620,24 +737,40 @@ def _watchdog_loop():
 def _watchdog_check():
     if connection_status() != "connected":
         return  # already reconnecting/disconnected - _run_forever already owns this
-    with _last_data_at_lock:
-        last = _last_data_at
-    if last is None:
-        return  # nothing received on this connection yet - too early to judge
-    idle = time.time() - last
-    if idle <= STALE_AFTER_SECONDS:
+    if not _history_loaded:
+        _sync_history()  # the connect-time load failed (xWeb up, results endpoint not yet)
         return
-    log.warning("market agent connection looks stale (%.0fs since last tick) - forcing reconnect", idle)
+    if _sync_history() == 0:
+        return
+    log.warning("market agent got new rows over REST that the hub never delivered - forcing reconnect")
     with _current_hub_lock:
         hub = _current_hub
+        closed = _current_closed
     if hub is not None:
         try:
             hub.stop()
         except Exception as e:
             log.warning("stale-connection stop() failed: %s", e)
+    # hub.stop() alone is not enough: signalrcore 1.0.2 latches
+    # manually_closing on the first call (every later stop() returns
+    # immediately), and on a half-dead socket the close callback that would
+    # fire _on_close never comes - so _connect_once stayed blocked on
+    # closed.wait(), state stayed "connected", and this check re-fired every
+    # pass to no effect (found 2026-09-30: no tick for 5 days, and a
+    # stale saxo.authstatus kept the pill on "login required" through a
+    # successful login). Releasing _connect_once directly lets _run_forever
+    # abandon the dead hub and build a fresh one.
+    if closed is not None:
+        _set_connection_state("disconnected")
+        closed.set()
 
 
 def start_background_thread():
+    # The pre-database local history; the Workflow Service owns it now.
+    try:
+        (SHARE / "log.jsonl").unlink(missing_ok=True)
+    except OSError:
+        pass
     t = threading.Thread(target=_run_forever, name="market-agent-hub", daemon=True)
     t.start()
     threading.Thread(target=_watchdog_loop, name="market-agent-watchdog", daemon=True).start()

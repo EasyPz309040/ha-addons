@@ -356,7 +356,7 @@
     <div class="diagram-scroll">
       <figure>
         <svg viewBox="0 0 1300 520" role="img"
-             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.preview, the background loop's own tick roughly every five minutes, and saxo.authstatus, pushed the instant a login or token refresh happens rather than waiting on the next scheduled tick. On the same connect event it also pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint, and a separate watchdog thread force-closes the connection if it has claimed connected for over twenty five minutes with no new preview tick, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
+             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.result, one message per result row xWeb stores in its database, and saxo.authstatus, pushed the instant a login or token refresh happens. On the same connect event it loads history from xWeb's GetResults endpoint and catches up on missed rows by id, and it pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint (POST /config/Maintain). A separate watchdog thread polls GetResults and force-closes the connection if rows turn up that the hub never delivered, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
           <defs>
             <marker id="f2-wire" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" style="fill:var(--wire)"></path>
@@ -376,21 +376,21 @@
 
           <rect x="930" y="110" width="320" height="70" rx="10" style="fill:var(--wire-soft);stroke:var(--wire)"></rect>
           <text x="1090" y="134" text-anchor="middle" class="node-label" style="fill:var(--wire-strong);font-size:12.5px">StreamHub</text>
-          <text x="1090" y="152" text-anchor="middle" class="node-sub">marketagent.preview — every ~5 min</text>
+          <text x="1090" y="152" text-anchor="middle" class="node-sub">marketagent.result — one row per stored result</text>
           <text x="1090" y="168" text-anchor="middle" class="node-sub">saxo.authstatus — pushed on login/refresh</text>
 
           <rect x="930" y="210" width="320" height="50" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
-          <text x="1090" y="230" text-anchor="middle" class="node-label" style="font-size:12px">POST /claude/MarketAgent/config</text>
-          <text x="1090" y="247" text-anchor="middle" class="node-sub">unified thresholds + system prompt</text>
+          <text x="1090" y="230" text-anchor="middle" class="node-label" style="font-size:12px">POST /config/Maintain</text>
+          <text x="1090" y="247" text-anchor="middle" class="node-sub">thresholds + system prompt</text>
 
           <rect x="930" y="400" width="320" height="70" rx="10" style="fill:var(--spend-soft);stroke:var(--spend)"></rect>
-          <text x="1090" y="424" text-anchor="middle" class="node-label" style="fill:var(--spend-strong);font-size:12.5px">GET /claude/MarketAgent?preview=false</text>
+          <text x="1090" y="424" text-anchor="middle" class="node-label" style="fill:var(--spend-strong);font-size:12.5px">POST /claude/MarketAgentAnalyze</text>
           <text x="1090" y="442" text-anchor="middle" class="node-sub" style="fill:var(--spend-strong)">Claude API — billed</text>
           <text x="1090" y="458" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">only path that spends money</text>
 
           <rect x="500" y="100" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
           <text x="665" y="122" text-anchor="middle" class="node-label" style="font-size:12.5px">SignalR subscriber</text>
-          <text x="665" y="140" text-anchor="middle" class="node-sub">Subscribe + RequestLatest, both topics</text>
+          <text x="665" y="140" text-anchor="middle" class="node-sub">Subscribe, both topics, + GetResults catch-up by id</text>
           <text x="665" y="156" text-anchor="middle" class="node-sub">on every connect AND every reconnect</text>
           <text x="665" y="172" text-anchor="middle" class="node-sub" style="fill:var(--text-faint)">group membership doesn't survive a reconnect</text>
 
@@ -402,9 +402,9 @@
 
           <rect x="500" y="320" width="330" height="90" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
           <text x="665" y="342" text-anchor="middle" class="node-label" style="font-size:12.5px">Stale-connection watchdog</text>
-          <text x="665" y="360" text-anchor="middle" class="node-sub">separate thread, checks every 60s</text>
-          <text x="665" y="376" text-anchor="middle" class="node-sub">force-closes if "connected" but no new</text>
-          <text x="665" y="392" text-anchor="middle" class="node-sub">preview tick in 25 min (5x normal cadence)</text>
+          <text x="665" y="360" text-anchor="middle" class="node-sub">separate thread, polls GetResults every 60s</text>
+          <text x="665" y="376" text-anchor="middle" class="node-sub">force-closes if "connected" but a stored row</text>
+          <text x="665" y="392" text-anchor="middle" class="node-sub">arrived over REST that the hub never delivered</text>
 
           <rect x="50" y="100" width="400" height="120" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
           <text x="250" y="124" text-anchor="middle" class="node-label" style="font-size:12.5px">Notification dedup</text>
@@ -445,12 +445,13 @@
     <figcaption>Superseded xWeb's own diagram's former "Figure 6" — moved here 2026-08-25 so xWeb's diagram can
     stay scoped to its own backend/API/workflow surface rather than describing a specific client's internals. This
     version also reflects everything built since that figure was drawn: a second topic
-    (<code>saxo.authstatus</code>) so the Saxo pill reacts within moments of a login instead of waiting on the next
-    preview tick; the config-push endpoint, which is what makes trigger thresholds and the Claude system prompt
-    adjustable from this add-on's own config without touching xWeb directly; and the stale-connection watchdog,
-    added after a real incident where the connection survived an xWeb redeploy without erroring or reconnecting —
-    TCP stayed open, the pill kept saying "connected", but no further tick ever arrived. <code>market_agent.py</code>
-    never calls Claude on its own — every background tick is <code>preview: true</code> by design, so the free
+    (<code>saxo.authstatus</code>) so the Saxo pill reacts within moments of a login; history that lives in xWeb's
+    database (<code>GET /market-agent/GetResults</code>, appended live from <code>marketagent.result</code> by row id)
+    instead of in the add-on; the config-push endpoint, which is what makes trigger thresholds and the Claude system
+    prompt adjustable from this add-on's own config without touching xWeb directly; and the stale-connection
+    watchdog, added after a real incident where the connection survived an xWeb redeploy without erroring or
+    reconnecting — TCP stayed open, the pill kept saying "connected", but no further result ever arrived.
+    <code>market_agent.py</code> never calls Claude on its own — every background run is a free preview by design, so the free
     loop can never spend money autonomously; only a human clicking <strong>Run AI Trend Analysis</strong> reaches
     the billed path.</figcaption>
   </div>

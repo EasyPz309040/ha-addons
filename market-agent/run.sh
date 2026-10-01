@@ -13,6 +13,8 @@ exec env \
   XWEB_HOST="$(bashio::config 'workflow_service_host')" \
   MARKET_AGENT_SYMBOL="$(bashio::config 'market_agent_symbol')" \
   NOTIFY_SERVICE="$(bashio::config 'notify_service')" \
+  SILENCE_START="$(bashio::config 'silence_start')" \
+  SILENCE_END="$(bashio::config 'silence_end')" \
   AUTH_LOGIN_URL="$(bashio::config 'auth_login_url')" \
   PRICE_MOVE_THRESHOLD_PERCENT="$(bashio::config 'price_move_threshold_percent')" \
   VOLATILITY_THRESHOLD_PERCENT="$(bashio::config 'volatility_threshold_percent')" \
