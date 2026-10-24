@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.26.0"
+version: "1.27.0"
 slug: "market-agent"
 description: "A live dashboard client for an operator-configured analysis service."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
