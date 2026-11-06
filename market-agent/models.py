@@ -115,6 +115,7 @@ class MarketSignalAnalysis(_HubModel):
     reply validated against the schema xWeb sent. Enums arrive as strings."""
     bias: str | None = _dual("Bias", "bias", default=None)  # Bullish|Bearish|Neutral
     confidence: str | None = _dual("Confidence", "confidence", default=None)  # Low|Medium|High
+    confidence_reason: str | None = _dual("ConfidenceReason", "confidenceReason", default=None)
     driver: str | None = _dual("Driver", "driver", default=None)
     risk: str | None = _dual("Risk", "risk", default=None)
     trend_5m: str | None = _dual("Trend5m", "trend5m", default=None)  # Up|Down|Mixed
@@ -123,6 +124,7 @@ class MarketSignalAnalysis(_HubModel):
     timeframes_agree: bool | None = _dual("TimeframesAgree", "timeframesAgree", default=None)
     # Uptrend|Downtrend|Range|UptrendBroken|DowntrendBroken (the daily market structure)
     structure: str | None = _dual("Structure", "structure", default=None)
+    structure_conflict: str | None = _dual("StructureConflict", "structureConflict", default=None)
     patterns: list[CandlePattern] | None = _dual("Patterns", "patterns", default=None)
     notes: str | None = _dual("Notes", "notes", default=None)
 

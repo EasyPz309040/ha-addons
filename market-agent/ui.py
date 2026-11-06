@@ -780,7 +780,9 @@ def _render_analysis_fields(signal):
         return f"<pre>{html.escape(str(signal.get('Answer') or ''))}</pre>"
     rows = [
         ("Bias", f"{_with_arrow(analysis.get('Bias'))} ({analysis.get('Confidence') or '?'} confidence)"),
-        ("Market structure", _STRUCTURE_TEXT.get(analysis.get("Structure"), analysis.get("Structure") or "")),
+        ("Why this confidence", analysis.get("ConfidenceReason") or ""),
+        ("Daily market structure", _STRUCTURE_TEXT.get(analysis.get("Structure"), analysis.get("Structure") or "")),
+        ("Bias against the structure", analysis.get("StructureConflict") or ""),
         ("Trend 5-min / hourly / daily",
          f"{_with_arrow(analysis.get('Trend5m'))} / {_with_arrow(analysis.get('Trend1h'))} / {_with_arrow(analysis.get('Trend1d'))}"),
         ("Timeframes", "all three agree" if analysis.get("TimeframesAgree") else "not all agree"),
@@ -800,7 +802,7 @@ def _render_analysis_fields(signal):
         if pt.get("Note"):
             line += f" - {pt['Note']}"
         rows.append(("Pattern", line))
-    body = "".join(f"<tr><th>{html.escape(k)}</th><td>{html.escape(str(v))}</td></tr>" for k, v in rows)
+    body = "".join(f"<tr><th>{html.escape(k)}</th><td>{html.escape(str(v))}</td></tr>" for k, v in rows if v != "")
     return f"<table>{body}</table>"
 
 
