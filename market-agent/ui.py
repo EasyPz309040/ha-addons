@@ -791,6 +791,15 @@ def _render_analysis_fields(signal):
     ]
     if analysis.get("Notes"):
         rows.append(("Notes", analysis["Notes"]))
+    _ROLES = {"LongTrigger": "Long trigger", "ShortTrigger": "Short trigger", "MovingAverage": "Moving average",
+              "PreviousDay": "Previous day", "RangeEdge": "Range edge"}
+    for lv in analysis.get("KeyLevels") or []:
+        role = _ROLES.get(lv.get("Role"), lv.get("Role") or "Level")
+        name = (lv.get("Label") or role).strip()
+        line = f"{lv.get('Price')} {name} ({role}, {_TIMEFRAME_TEXT.get(lv.get('Timeframe'), lv.get('Timeframe') or '')})"
+        if lv.get("Description"):
+            line += f" - {lv['Description']}"
+        rows.append(("Key level", line))
     for pt in analysis.get("Patterns") or []:
         bits = [_PATTERN_TEXT.get(pt.get("Type"), pt.get("Type") or "Pattern") + " " + _ARROW.get(pt.get("Direction"), ""),
                 _TIMEFRAME_TEXT.get(pt.get("Timeframe"), pt.get("Timeframe") or "")]

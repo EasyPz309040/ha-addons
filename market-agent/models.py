@@ -109,6 +109,15 @@ class CandlePattern(_HubModel):
     note: str | None = _dual("Note", "note", default=None)
 
 
+class KeyLevel(_HubModel):
+    """One price level the agent found (Model.Core's KeyLevel)."""
+    price: Decimal | None = _dual("Price", "price", default=None)
+    role: str | None = _dual("Role", "role", default=None)  # Support|Resistance|LongTrigger|ShortTrigger|Target|Invalidation|MovingAverage|PreviousDay|RangeEdge
+    timeframe: str | None = _dual("Timeframe", "timeframe", default=None)
+    label: str | None = _dual("Label", "label", default=None)
+    description: str | None = _dual("Description", "description", default=None)
+
+
 class MarketSignalAnalysis(_HubModel):
     """What the market-analyst agent produced for one run (Model.Core's
     MarketSignalAnalysis): the structured answer, present when the agent's
@@ -125,6 +134,7 @@ class MarketSignalAnalysis(_HubModel):
     # Uptrend|Downtrend|Range|UptrendBroken|DowntrendBroken (the daily market structure)
     structure: str | None = _dual("Structure", "structure", default=None)
     structure_conflict: str | None = _dual("StructureConflict", "structureConflict", default=None)
+    key_levels: list[KeyLevel] | None = _dual("KeyLevels", "keyLevels", default=None)
     patterns: list[CandlePattern] | None = _dual("Patterns", "patterns", default=None)
     notes: str | None = _dual("Notes", "notes", default=None)
 
