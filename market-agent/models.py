@@ -99,12 +99,42 @@ class SaxoChartSample(_HubModel):
     sma200: Decimal | None = _dual("Sma200", "sma200", default=None)
 
 
+class CandlePattern(_HubModel):
+    """One candle pattern the agent found (Model.Core's CandlePattern)."""
+    type: str | None = _dual("Type", "type", default=None)  # CandleClose|CandleRejection|BreakOfStructure|FailedBreakout|Engulfing|PinBar|InsideBar|Doji|Star
+    timeframe: str | None = _dual("Timeframe", "timeframe", default=None)  # FiveMinute|Hourly|Daily
+    direction: str | None = _dual("Direction", "direction", default=None)  # Bullish|Bearish
+    level: Decimal | None = _dual("Level", "level", default=None)
+    at: str | None = _dual("At", "at", default=None)
+    note: str | None = _dual("Note", "note", default=None)
+
+
+class MarketSignalAnalysis(_HubModel):
+    """What the market-analyst agent produced for one run (Model.Core's
+    MarketSignalAnalysis): the structured answer, present when the agent's
+    reply validated against the schema xWeb sent. Enums arrive as strings."""
+    bias: str | None = _dual("Bias", "bias", default=None)  # Bullish|Bearish|Neutral
+    confidence: str | None = _dual("Confidence", "confidence", default=None)  # Low|Medium|High
+    driver: str | None = _dual("Driver", "driver", default=None)
+    risk: str | None = _dual("Risk", "risk", default=None)
+    trend_5m: str | None = _dual("Trend5m", "trend5m", default=None)  # Up|Down|Mixed
+    trend_1h: str | None = _dual("Trend1h", "trend1h", default=None)
+    trend_1d: str | None = _dual("Trend1d", "trend1d", default=None)
+    timeframes_agree: bool | None = _dual("TimeframesAgree", "timeframesAgree", default=None)
+    # Uptrend|Downtrend|Range|UptrendBroken|DowntrendBroken (the daily market structure)
+    structure: str | None = _dual("Structure", "structure", default=None)
+    patterns: list[CandlePattern] | None = _dual("Patterns", "patterns", default=None)
+    notes: str | None = _dual("Notes", "notes", default=None)
+
+
 class MarketSignalEntry(_HubModel):
-    """MarketWorkflowResult.Signal - populated only on a Completed tick."""
+    """MarketWorkflowResult.Signal - populated only on an Analysis result."""
     date: DotNetDateTime = _dual("Date", "date")
     question: str | None = _dual("Question", "question", default=None)
     answer: str | None = _dual("Answer", "answer", default=None)
     symbols: list[str] | None = _dual("Symbols", "symbols", default=None)
+    # None on rows from before structured output, or when the reply did not validate (answer holds the raw text)
+    analysis: MarketSignalAnalysis | None = _dual("Analysis", "analysis", default=None)
 
 
 class TriggerMetrics(_HubModel):
@@ -132,7 +162,7 @@ class MarketWorkflowResult(_HubModel):
     Model.Core's own reference types being un-null-annotated, a runtime
     contract on xWeb's side too, not just here.
     """
-    status: str = _dual("Status", "status")  # SaxoAuthRequired|MarketClosed|TriggerNotMet|Preview|Completed
+    status: str = _dual("Status", "status")  # SaxoAuthRequired|MarketClosed|TriggerNotMet|Preview|Analysis
     run_at: DotNetDateTime = _dual("RunAt", "runAt")
     public_login_url: str | None = _dual("PublicLoginUrl", "publicLoginUrl", default=None)  # present every tick
     next_retry_after: OptionalDotNetDateTime = _dual("NextRetryAfter", "nextRetryAfter", default=None)
@@ -141,10 +171,13 @@ class MarketWorkflowResult(_HubModel):
     eval_candles: list[SaxoChartSample] | None = _dual("EvalCandles", "evalCandles", default=None)  # Preview-only
     system_prompt: str | None = _dual("SystemPrompt", "systemPrompt", default=None)  # Preview-only
     user_content: str | None = _dual("UserContent", "userContent", default=None)  # Preview-only
-    signal: MarketSignalEntry | None = _dual("Signal", "signal", default=None)  # Completed-only
-    input_tokens: int | None = _dual("InputTokens", "inputTokens", default=None)  # Completed-only
-    output_tokens: int | None = _dual("OutputTokens", "outputTokens", default=None)  # Completed-only
-    model: str | None = _dual("Model", "model", default=None)  # Completed-only
+    signal: MarketSignalEntry | None = _dual("Signal", "signal", default=None)  # Analysis-only
+    input_tokens: int | None = _dual("InputTokens", "inputTokens", default=None)  # Analysis-only
+    output_tokens: int | None = _dual("OutputTokens", "outputTokens", default=None)  # Analysis-only
+    model: str | None = _dual("Model", "model", default=None)  # Analysis-only
+    schema_version: int | None = _dual("SchemaVersion", "schemaVersion", default=None)  # Analysis-only
+    parse_status: str | None = _dual("ParseStatus", "parseStatus", default=None)  # Analysis-only: Parsed|Unparsed
+    run_id: str | None = _dual("RunId", "runId", default=None)  # Analysis-only: claude-agent's run id
 
 
 class MarketAgentBaseline(_HubModel):
@@ -156,12 +189,12 @@ class MarketAgentBaseline(_HubModel):
 class MarketAgentResultRow(_HubModel):
     """One stored row: GET /market-agent/GetResults's element type and the
     marketagent.result topic's payload, in the same camelCase System.Text.Json
-    shape. result is set for Preview/Completed rows, baseline for Baseline
+    shape. result is set for Preview/Analysis rows, baseline for Baseline
     rows. id is the cursor for ?afterId= catch-up and the de-duplication key
     between a live append and rows already fetched over REST.
     """
     id: int = _dual("Id", "id")
-    kind: str = _dual("Kind", "kind")  # Preview|Baseline|Completed|MarketClosed, open-ended
+    kind: str = _dual("Kind", "kind")  # Preview|Baseline|Analysis|MarketClosed, open-ended
     symbol: str = _dual("Symbol", "symbol")
     run_at: DotNetDateTime = _dual("RunAt", "runAt")
     result: MarketWorkflowResult | None = _dual("Result", "result", default=None)

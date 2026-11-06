@@ -1,5 +1,5 @@
 name: "EasyPz Market Agent"
-version: "1.27.0"
+version: "1.28.0"
 slug: "market-agent"
 description: "A live dashboard client for an operator-configured analysis service."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/market-agent"
@@ -25,7 +25,6 @@ options:
   auth_login_url: ""
   price_move_threshold_percent: ""
   volatility_threshold_percent: ""
-  system_prompt: ""
 schema:
   workflow_service_host: str
   market_agent_symbol: str
@@ -35,4 +34,3 @@ schema:
   auth_login_url: str
   price_move_threshold_percent: str
   volatility_threshold_percent: str
-  system_prompt: str

@@ -751,11 +751,64 @@ def _render_chart_block(entry, caption):
     )
 
 
+_ARROW = {"Bullish": "\u2191", "Up": "\u2191", "Bearish": "\u2193", "Down": "\u2193"}
+_STRUCTURE_TEXT = {
+    "Uptrend": "Uptrend", "Downtrend": "Downtrend", "Range": "Range",
+    "UptrendBroken": "Reversal: uptrend broke", "DowntrendBroken": "Reversal: downtrend broke",
+}
+_PATTERN_TEXT = {
+    "CandleClose": "Candle close", "CandleRejection": "Candle rejection", "BreakOfStructure": "Break of structure",
+    "FailedBreakout": "Failed breakout", "Engulfing": "Engulfing", "PinBar": "Pin bar", "InsideBar": "Inside bar",
+    "Doji": "Doji", "Star": "Star",
+}
+_TIMEFRAME_TEXT = {"FiveMinute": "5-min", "Hourly": "Hourly", "Daily": "Daily"}
+
+
+def _with_arrow(value):
+    """A direction word followed by an arrow: up for Bullish/Up, down for Bearish/Down."""
+    value = str(value or "?")
+    arrow = _ARROW.get(value)
+    return f"{value} {arrow}" if arrow else value
+
+
+def _render_analysis_fields(signal):
+    """The agent's structured analysis as a small table, or the raw answer
+    text when the run has none (rows from before structured output, or a
+    reply that did not match the schema)."""
+    analysis = signal.get("Analysis")
+    if not analysis:
+        return f"<pre>{html.escape(str(signal.get('Answer') or ''))}</pre>"
+    rows = [
+        ("Bias", f"{_with_arrow(analysis.get('Bias'))} ({analysis.get('Confidence') or '?'} confidence)"),
+        ("Market structure", _STRUCTURE_TEXT.get(analysis.get("Structure"), analysis.get("Structure") or "")),
+        ("Trend 5-min / hourly / daily",
+         f"{_with_arrow(analysis.get('Trend5m'))} / {_with_arrow(analysis.get('Trend1h'))} / {_with_arrow(analysis.get('Trend1d'))}"),
+        ("Timeframes", "all three agree" if analysis.get("TimeframesAgree") else "not all agree"),
+        ("Driver", analysis.get("Driver") or ""),
+        ("Key risk", analysis.get("Risk") or ""),
+    ]
+    if analysis.get("Notes"):
+        rows.append(("Notes", analysis["Notes"]))
+    for pt in analysis.get("Patterns") or []:
+        bits = [_PATTERN_TEXT.get(pt.get("Type"), pt.get("Type") or "Pattern") + " " + _ARROW.get(pt.get("Direction"), ""),
+                _TIMEFRAME_TEXT.get(pt.get("Timeframe"), pt.get("Timeframe") or "")]
+        if pt.get("Level") is not None:
+            bits.append(f"level {pt['Level']}")
+        if pt.get("At"):
+            bits.append(str(pt["At"]))
+        line = " \u00b7 ".join(b.strip() for b in bits if b and b.strip())
+        if pt.get("Note"):
+            line += f" - {pt['Note']}"
+        rows.append(("Pattern", line))
+    body = "".join(f"<tr><th>{html.escape(k)}</th><td>{html.escape(str(v))}</td></tr>" for k, v in rows)
+    return f"<table>{body}</table>"
+
+
 def _render_ai_result_block(entry):
-    """The most recent *billed* (Completed) run's question/answer, shown
+    """The most recent *billed* (Analysis) run's question/answer, shown
     directly on the main page under the Run AI Trend Analysis button - not just
     on that check's own Workflow detail page. `entry` is the latest
-    Completed entry in history, or None if no billed run has happened yet
+    Analysis entry in history, or None if no billed run has happened yet
     (routine Preview/TriggerNotMet/MarketClosed ticks never carry a
     Signal, so scanning for one specifically is required - the overall
     latest history entry is very rarely this one).
@@ -779,7 +832,7 @@ def _render_ai_result_block(entry):
     return (
         f"<p class='note'>{' · '.join(meta_bits)}</p>"
         f"<p><b>Question:</b> {html.escape(str(signal.get('Question') or ''))}</p>"
-        f"<pre>{html.escape(str(signal.get('Answer') or ''))}</pre>"
+        f"{_render_analysis_fields(signal)}"
     )
 
 
@@ -878,8 +931,8 @@ def render_page(notice=None, good=True, before=None):
     else:
         last_check_block = ""
 
-    latest_completed = next((e for e in reversed(entries) if e.get("Status") == "Completed"), None)
-    ai_result_block = _render_ai_result_block(latest_completed)
+    latest_analysis = next((e for e in reversed(entries) if e.get("Status") == "Analysis"), None)
+    ai_result_block = _render_ai_result_block(latest_analysis)
 
     return PAGE.format(
         symbol=html.escape(market_agent.SYMBOL), banner=banner,
@@ -942,7 +995,7 @@ def render_tick_page(row_id):
         ("Reasons", html.escape(reasons)),
         ("Last trigger before this", last_triggered_html),
     ]
-    # Token usage/cost - only ever present on a Completed (billed) tick, and
+    # Token usage/cost - only ever present on an Analysis (billed) result, and
     # only once the Workflow Service actually reports them; absent today,
     # shows up here automatically the moment it starts being broadcast, no
     # further change needed on this side.
@@ -954,11 +1007,11 @@ def render_tick_page(row_id):
     metric_rows = "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows)
 
     signal = entry.get("Signal")
-    if status == "Completed" and signal:
+    if status == "Analysis" and signal:
         signal_block = (
-            "<h2>Claude analysis</h2>"
+            "<h2>Agent analysis</h2>"
             f"<p><b>Question:</b> {html.escape(str(signal.get('Question') or ''))}</p>"
-            f"<pre>{html.escape(str(signal.get('Answer') or ''))}</pre>"
+            f"{_render_analysis_fields(signal)}"
         )
     else:
         signal_block = ""

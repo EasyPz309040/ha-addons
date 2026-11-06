@@ -18,5 +18,4 @@ exec env \
   AUTH_LOGIN_URL="$(bashio::config 'auth_login_url')" \
   PRICE_MOVE_THRESHOLD_PERCENT="$(bashio::config 'price_move_threshold_percent')" \
   VOLATILITY_THRESHOLD_PERCENT="$(bashio::config 'volatility_threshold_percent')" \
-  SYSTEM_PROMPT="$(bashio::config 'system_prompt')" \
   python3 /usr/bin/ui.py

@@ -97,15 +97,14 @@ def in_silence_window(now=None):
         return SILENCE_START <= minute < SILENCE_END
     return minute >= SILENCE_START or minute < SILENCE_END
 
-# Trigger thresholds + the Claude system prompt, pushed to the Workflow
-# Service's own App_Data config rather than passed per-request - it's the
+# Trigger thresholds, pushed to the Workflow Service's stored config (tbl_Configs)
+# rather than passed per-request - it's the
 # autonomous background loop that needs these, and that loop is entirely
 # inside the Workflow Service, never driven by a request from here. Each
 # is blank by default (don't override whatever the Workflow Service
 # already has configured).
 PRICE_MOVE_THRESHOLD_PERCENT = os.environ.get("PRICE_MOVE_THRESHOLD_PERCENT", "").strip()
 VOLATILITY_THRESHOLD_PERCENT = os.environ.get("VOLATILITY_THRESHOLD_PERCENT", "").strip()
-SYSTEM_PROMPT = os.environ.get("SYSTEM_PROMPT", "").strip()
 CONFIG_URL = f"https://{XWEB_HOST}/config/Maintain"
 ANALYZE_URL = f"https://{XWEB_HOST}/claude/MarketAgentAnalyze"
 RESULTS_URL = f"https://{XWEB_HOST}/market-agent/GetResults"
@@ -180,11 +179,11 @@ STATEFILE = SHARE / ".notify-state.json"
 # convenience, not an audit trail - the database is the record. It holds
 # summary rows only (GetResults never returns userContent/systemPrompt/
 # evalCandles; GetResult?id= does, on demand - see full_entry). About 4h of
-# 5-minute previews, with Completed (billed) analyses capped separately so a
+# 5-minute previews, with Analysis (billed) results capped separately so a
 # run of previews never pushes the last real analysis out of view. Older
 # checks are paged in from the database for display (page_before), not kept.
 MAX_ENTRIES = 50
-MAX_COMPLETED_ENTRIES = 30
+MAX_ANALYSIS_ENTRIES = 30
 MAX_CLOSED_ENTRIES = 10
 PAGE_SIZE = 30  # rows per "older" page in the panel
 
@@ -286,7 +285,7 @@ def _pascal(value):
 
 
 def _entry_from_row(row, result):
-    """Panel entry for any row carrying a result (Preview, Completed,
+    """Panel entry for any row carrying a result (Preview, Analysis,
     MarketClosed, or a kind added later - Kind stays a plain string here so
     an unknown one is tolerated, not rejected). receivedAt is the row's own
     RunAt, and RowId its database id (the key for GetResult and paging), so
@@ -298,10 +297,10 @@ def _entry_from_row(row, result):
 
 
 def _trim(entries):
-    completed = [e for e in entries if e.get("Status") == "Completed"]
+    analyses = [e for e in entries if e.get("Status") == "Analysis"]
     closed = [e for e in entries if e.get("Status") == "MarketClosed"]
-    normal = [e for e in entries if e.get("Status") not in ("Completed", "MarketClosed")]
-    kept = (completed[-MAX_COMPLETED_ENTRIES:] + closed[-MAX_CLOSED_ENTRIES:]
+    normal = [e for e in entries if e.get("Status") not in ("Analysis", "MarketClosed")]
+    kept = (analyses[-MAX_ANALYSIS_ENTRIES:] + closed[-MAX_CLOSED_ENTRIES:]
             + normal[-MAX_ENTRIES:])
     kept.sort(key=lambda e: e.get("receivedAt", 0))
     return kept
@@ -530,7 +529,7 @@ def page_before(row_id, limit=PAGE_SIZE):
 def _sync_history():
     """Brings the panel's entries up to date from GetResults.
 
-    First success: loads recent Preview, Completed and MarketClosed rows
+    First success: loads recent Preview, Analysis and MarketClosed rows
     (the latter carries NextRetryAfter for the panel's reopen line) as history
     (no notifications) and runs only the newest Preview row through the
     notification logic, so the login/threshold state matches the live
@@ -550,7 +549,7 @@ def _sync_history():
                     _on_result_row(raw)
                 return len(_seen_ids) - before
             rows = (_fetch_rows(kind="Preview", limit=MAX_ENTRIES)
-                    + _fetch_rows(kind="Completed", limit=MAX_COMPLETED_ENTRIES)
+                    + _fetch_rows(kind="Analysis", limit=MAX_ANALYSIS_ENTRIES)
                     + _fetch_rows(kind="MarketClosed", limit=MAX_CLOSED_ENTRIES))
         except Exception as e:
             log.warning("market agent history sync failed: %s", e)
@@ -631,7 +630,7 @@ def trigger_real_run():
 
 
 def _push_agent_config():
-    """Pushes configured thresholds/prompt to the Workflow Service's
+    """Pushes configured thresholds to the Workflow Service's
     unified config endpoint. Called from _on_open - on every (re)connect,
     not just once at add-on startup. That's what makes this self-healing:
     an xWeb redeploy wipes its own App_Data (including this config), but
@@ -657,8 +656,6 @@ def _push_agent_config():
             body["volatilityThresholdPercent"] = float(VOLATILITY_THRESHOLD_PERCENT)
         except ValueError:
             log.warning("volatility_threshold_percent is not a number: %r", VOLATILITY_THRESHOLD_PERCENT)
-    if SYSTEM_PROMPT:
-        body["systemPrompt"] = SYSTEM_PROMPT
     if not body:
         return
 
