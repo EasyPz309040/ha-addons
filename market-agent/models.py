@@ -200,7 +200,7 @@ class MarketAgentBaseline(_HubModel):
 
 class MarketAgentResultRow(_HubModel):
     """One stored row: GET /market-agent/GetResults's element type and the
-    marketagent.result topic's payload, in the same camelCase System.Text.Json
+    marketagent.marketagentresultrow topic's payload, in the same camelCase System.Text.Json
     shape. result is set for Preview/Analysis rows, baseline for Baseline
     rows. id is the cursor for ?afterId= catch-up and the de-duplication key
     between a live append and rows already fetched over REST.
@@ -214,7 +214,7 @@ class MarketAgentResultRow(_HubModel):
 
 
 class SaxoAuthStatus(_HubModel):
-    """saxo.authstatus's payload, and GET /saxo/AuthStatus's REST
+    """saxoapi.saxoauthstatus's payload, and GET /saxo/AuthStatus's REST
     response (added specifically to make this class OpenAPI-visible -
     xWeb commit 03106a1). updated_at/refresh_token_expires_at were
     missing from this add-on's own field usage entirely until generated

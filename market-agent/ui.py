@@ -50,10 +50,10 @@ CONNECTION_PILLS = {
 
 
 def _auth_pill(entries):
-    """Prefers the saxo.authstatus push - pushed the instant a login or
+    """Prefers the saxoapi.saxoauthstatus push - pushed the instant a login or
     refresh actually happens, not tied to the 5-minute result cadence at all. Falls back to inferring it from the latest
     preview tick's own Status (the old, laggier signal) only if no
-    saxo.authstatus has arrived yet - an older Workflow Service without
+    saxoapi.saxoauthstatus has arrived yet - an older Workflow Service without
     this topic, or just not received one this run - same
     defensive-fields-may-be-absent pattern as PublicLoginUrl and the
     trigger threshold fields.

@@ -2,7 +2,7 @@
 """Background subscriber + notifier for the Market Agent panel.
 
 Connects once to the Workflow Service's SignalR hub (/streamHub) and stays
-connected, subscribed to topic "marketagent.result" - each broadcast is
+connected, subscribed to topic "marketagent.marketagentresultrow" - each broadcast is
 one stored result row (a preview tick of MarketAgentBackgroundService's own
 loop, a trigger baseline, or a billed Claude analysis - see the Workflow
 Service's own CLAUDE.md). History lives in the Workflow Service's database:
@@ -110,18 +110,18 @@ ANALYZE_URL = f"https://{XWEB_HOST}/claude/MarketAgentAnalyze"
 RESULTS_URL = f"https://{XWEB_HOST}/market-agent/GetResults"
 RESULT_URL = f"https://{XWEB_HOST}/market-agent/GetResult"
 
-TOPIC = "marketagent.result"
+TOPIC = "marketagent.marketagentresultrow"
 # The Workflow Service's own auth-status topic - the literal name below
-# ("saxo.authstatus") is a wire constant coming straight from its own
+# ("saxoapi.saxoauthstatus") is a wire constant coming straight from its own
 # topic-prefix-as-owner convention and must match exactly what it
 # broadcasts; nothing in this add-on's own naming (AUTH_TOPIC, everything
 # downstream of it) needs to echo that, so it doesn't. Pushed the moment
 # the Workflow Service's own upstream-broker auth state actually changes
 # (login, a real refresh, or once at its own startup) - not tied to
-# marketagent.result's 5-minute poll cadence at all, which is what makes
+# marketagent.marketagentresultrow's 5-minute poll cadence at all, which is what makes
 # the auth pill react immediately to a login instead of waiting for the
 # next preview tick.
-AUTH_TOPIC = "saxo.authstatus"
+AUTH_TOPIC = "saxoapi.saxoauthstatus"
 HUB_URL = f"https://{XWEB_HOST}/streamHub"
 # Fallback chain, used only until the Workflow Service's own broadcast
 # carries a PublicLoginUrl (see _public_login_url below - that's the
@@ -157,12 +157,12 @@ def login_url():
         return _public_login_url or _AUTH_LOGIN_URL_FALLBACK
 
 
-_last_auth_status = None  # latest saxo.authstatus payload, if any have arrived yet
+_last_auth_status = None  # latest saxoapi.saxoauthstatus payload, if any have arrived yet
 _auth_status_lock = threading.Lock()
 
 
 def auth_status():
-    """The latest saxo.authstatus push, or None if none has arrived yet
+    """The latest saxoapi.saxoauthstatus push, or None if none has arrived yet
     (an older Workflow Service without this topic, or just not received
     one this run). ui.py prefers this for the auth pill when present,
     falling back to inferring it from the last result row's
@@ -329,7 +329,7 @@ def _handle_auth_signal(required):
 
     Single source of truth for last_auth_required so that the
     result rows' own auth-required status (wire value "SaxoAuthRequired")
-    and the saxo.authstatus push - which can report the same transition
+    and the saxoapi.saxoauthstatus push - which can report the same transition
     independently, sometimes within moments of each other - can't
     double-notify. Self-locking: callers must NOT already
     hold _state_lock.
@@ -406,7 +406,7 @@ _history_loaded = False
 
 
 def _on_result_row(raw, notify_events=True):
-    """One marketagent.result message / GetResults row. Idempotent on the
+    """One marketagent.marketagentresultrow message / GetResults row. Idempotent on the
     row's id, so a live row that also arrives in a REST catch-up is only
     handled once.
 
@@ -426,7 +426,7 @@ def _on_result_row(raw, notify_events=True):
     try:
         row = MarketAgentResultRow.model_validate(raw)
     except ValidationError as e:
-        log.error("marketagent.result row failed schema validation: %s", e)
+        log.error("marketagent.marketagentresultrow row failed schema validation: %s", e)
         return
 
     with _ingest_lock:
@@ -535,7 +535,7 @@ def _sync_history():
     notification logic, so the login/threshold state matches the live
     system without replaying old events. Afterwards: everything newer than
     the cursor, in order, as live rows - this is the post-reconnect
-    catch-up, since marketagent.result has no RequestLatest replay. Held
+    catch-up, since marketagent.marketagentresultrow has no RequestLatest replay. Held
     under _ingest_lock so a live row can't be ingested between the fetch
     and the loop. Best-effort: a failure leaves _history_loaded False and
     the watchdog loop retries. Returns how many rows it newly ingested.
@@ -564,7 +564,7 @@ def _sync_history():
 
 
 def _on_auth_status_data(result):
-    """saxo.authstatus - see AUTH_TOPIC's own comment for why this
+    """saxoapi.saxoauthstatus - see AUTH_TOPIC's own comment for why this
     exists. Validated against models.SaxoAuthStatus, which is
     hand-maintained (not derived from an OpenAPI schema - xWeb has no
     REST endpoint for this class, see that model's own docstring).
@@ -578,7 +578,7 @@ def _on_auth_status_data(result):
     try:
         parsed = SaxoAuthStatus.model_validate(result)
     except ValidationError as e:
-        log.error("saxo.authstatus payload failed schema validation: %s", e)
+        log.error("saxoapi.saxoauthstatus payload failed schema validation: %s", e)
         return
 
     _update_public_login_url(parsed.public_login_url)
@@ -701,11 +701,11 @@ def _connect_once():
         # membership doesn't survive a reconnect either.
         hub.send("Subscribe", [TOPIC])
         hub.send("Subscribe", [AUTH_TOPIC])
-        # marketagent.result has no RequestLatest replay: subscribe first,
+        # marketagent.marketagentresultrow has no RequestLatest replay: subscribe first,
         # then load/catch up over REST (de-duplicated on row id), so no row
         # can fall in the gap between the two.
         _sync_history()
-        # saxo.authstatus does replay: RequestLatest is what makes the auth
+        # saxoapi.saxoauthstatus does replay: RequestLatest is what makes the auth
         # pill show a value immediately on connect rather than waiting on
         # the next login/refresh event.
         hub.send("RequestLatest", [AUTH_TOPIC])
@@ -803,7 +803,7 @@ def _watchdog_check():
     # fire _on_close never comes - so _connect_once stayed blocked on
     # closed.wait(), state stayed "connected", and this check re-fired every
     # pass to no effect (found 2026-09-30: no tick for 5 days, and a
-    # stale saxo.authstatus kept the pill on "login required" through a
+    # stale saxoapi.saxoauthstatus kept the pill on "login required" through a
     # successful login). Releasing _connect_once directly lets _run_forever
     # abandon the dead hub and build a fresh one.
     if closed is not None:

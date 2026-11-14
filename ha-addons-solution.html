@@ -356,7 +356,7 @@
     <div class="diagram-scroll">
       <figure>
         <svg viewBox="0 0 1300 520" role="img"
-             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.result, one message per result row xWeb stores in its database, and saxo.authstatus, pushed the instant a login or token refresh happens. On the same connect event it loads the newest page of slim summary rows from xWeb's GetResults endpoint, catches up on missed rows by id, and fetches a full row by id only for the chart and the detail page, and it pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint (POST /config/Maintain). A separate watchdog thread polls GetResults and force-closes the connection if rows turn up that the hub never delivered, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
+             aria-label="market_agent.py holds one persistent SignalR connection to xWeb's StreamHub, subscribing to two topics on every connect or reconnect: marketagent.marketagentresultrow, one message per result row xWeb stores in its database, and saxoapi.saxoauthstatus, pushed the instant a login or token refresh happens. On the same connect event it loads the newest page of slim summary rows from xWeb's GetResults endpoint, catches up on missed rows by id, and fetches a full row by id only for the chart and the detail page, and it pushes configured trigger thresholds and system prompt overrides to xWeb's config endpoint (POST /config/Maintain). A separate watchdog thread polls GetResults and force-closes the connection if rows turn up that the hub never delivered, handing it back to the same reconnect logic a real network failure would trigger. A notification dedup layer watches both topics for a threshold flip or a Saxo auth flip and fires a push through the Home Assistant Supervisor's own proxied API, no token needed. Only a manual click on the Run AI Trend Analysis button reaches the billed Claude call directly, bypassing the subscriber entirely.">
           <defs>
             <marker id="f2-wire" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" style="fill:var(--wire)"></path>
@@ -376,8 +376,8 @@
 
           <rect x="930" y="110" width="320" height="70" rx="10" style="fill:var(--wire-soft);stroke:var(--wire)"></rect>
           <text x="1090" y="134" text-anchor="middle" class="node-label" style="fill:var(--wire-strong);font-size:12.5px">StreamHub</text>
-          <text x="1090" y="152" text-anchor="middle" class="node-sub">marketagent.result — one row per stored result</text>
-          <text x="1090" y="168" text-anchor="middle" class="node-sub">saxo.authstatus — pushed on login/refresh</text>
+          <text x="1090" y="152" text-anchor="middle" class="node-sub">marketagent.marketagentresultrow — one row per stored result</text>
+          <text x="1090" y="168" text-anchor="middle" class="node-sub">saxoapi.saxoauthstatus — pushed on login/refresh</text>
 
           <rect x="930" y="210" width="320" height="50" rx="10" style="fill:var(--surface-alt);stroke:var(--border)"></rect>
           <text x="1090" y="230" text-anchor="middle" class="node-label" style="font-size:12px">POST /config/Maintain</text>
@@ -445,8 +445,8 @@
     <figcaption>Superseded xWeb's own diagram's former "Figure 6" — moved here 2026-08-25 so xWeb's diagram can
     stay scoped to its own backend/API/workflow surface rather than describing a specific client's internals. This
     version also reflects everything built since that figure was drawn: a second topic
-    (<code>saxo.authstatus</code>) so the Saxo pill reacts within moments of a login; history that lives in xWeb's
-    database (<code>GET /market-agent/GetResults</code>, appended live from <code>marketagent.result</code> by row id)
+    (<code>saxoapi.saxoauthstatus</code>) so the Saxo pill reacts within moments of a login; history that lives in xWeb's
+    database (<code>GET /market-agent/GetResults</code>, appended live from <code>marketagent.marketagentresultrow</code> by row id)
     instead of in the add-on; the config-push endpoint, which is what makes trigger thresholds and the Claude system
     prompt adjustable from this add-on's own config without touching xWeb directly; and the stale-connection
     watchdog, added after a real incident where the connection survived an xWeb redeploy without erroring or
