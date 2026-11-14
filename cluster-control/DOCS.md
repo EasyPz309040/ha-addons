@@ -47,6 +47,10 @@ Use the add-on **Log** tab for live output. Run logs and playbook state are stor
 
 A successful backup command is not proof of a usable backup. Test restoration using a separate recovery procedure and a safe target before relying on it.
 
+## Home Assistant configuration access
+
+The add-on mounts the Home Assistant configuration directory read-write at `/homeassistant`, so a playbook can deploy files such as YAML-mode dashboards. Only playbooks you configure can write there; review them before running.
+
 ## Operational boundaries
 
 - A failed repository fetch keeps the last successfully fetched checkout; inspect the log to confirm which revision ran.

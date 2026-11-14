@@ -1,5 +1,5 @@
 name: "EasyPz Cluster Control"
-version: "2.2.5"
+version: "2.3.0"
 slug: "cluster-control"
 description: "Run operator-configured Ansible playbooks on a schedule, with optional previews and backups."
 url: "https://github.com/EasyPz309040/ha-addons/tree/main/cluster-control"
@@ -15,6 +15,7 @@ boot: auto
 init: false
 map:
   - share:rw
+  - homeassistant_config:rw
 options:
   playbook_repo: ""
   playbook_branch: "main"
